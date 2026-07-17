@@ -3,6 +3,17 @@
 ####################
 src/cache/
 
+##########################
+# per-environment secrets #
+##########################
+config/dev/db.php
+config/dev/keys.php
+config/prod/db.php
+config/prod/keys.php
+config/mail.php
+config/api/dev/webservice.php
+config/api/prod/webservice.php
+
 web/upload/*
 !web/upload/.gitkeep
 
