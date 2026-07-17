@@ -8,6 +8,13 @@ $config = array(
         'languages' => array('ca')
     ),
 
+    'api' => array(
+        'app'        => 'Api',
+        'folders'    => array('api'),
+        'languages'  => array('ca'),
+        'vendorApps' => array('Webservice')
+    ),
+
     '{lang}' => array(
         'app'       => 'Web',
         'folders'   => array('web'),

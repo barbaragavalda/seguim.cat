@@ -366,4 +366,35 @@ INSERT INTO `appacman_user_profile_permission` VALUES (2, 1, 4);
 INSERT INTO `appacman_user_profile_permission` VALUES (2, 1, 7);
 COMMIT;
 
+-- ----------------------------
+-- Table structure for user (app users, distinct from appacman_user above,
+-- which is only for the Appacman backoffice admins)
+-- ----------------------------
+DROP TABLE IF EXISTS `user`;
+CREATE TABLE `user` (
+  `id_user` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `email` varchar(255) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user`) USING BTREE,
+  UNIQUE KEY `email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_token
+-- ----------------------------
+DROP TABLE IF EXISTS `user_token`;
+CREATE TABLE `user_token` (
+  `id_user_token` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `token` varchar(64) NOT NULL,
+  `device_label` varchar(255) DEFAULT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_used` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id_user_token`) USING BTREE,
+  UNIQUE KEY `token` (`token`),
+  KEY `id_user` (`id_user`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

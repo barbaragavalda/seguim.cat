@@ -16,12 +16,21 @@
     {
       "type": "vcs",
       "url": "git@bitbucket.org:optisistem/freimguork-appacman.git"
+    },
+    {
+      "type": "vcs",
+      "url": "git@bitbucket.org:optisistem/freimguork-webservice.git"
+    },
+    {
+      "type": "vcs",
+      "url": "git@bitbucket.org:optisistem/php-ref.git"
     }
   ],
   "require": {
     "php": "^8.5",
     "optisistem/freimguork-core": "dev-master",
     "optisistem/freimguork-appacman": "dev-master",
+    "optisistem/freimguork-webservice": "dev-master",
     "ext-gettext": "*",
     "ext-intl": "*",
     "ext-libxml": "*",
