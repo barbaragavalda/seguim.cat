@@ -1,0 +1,25 @@
+<?php
+
+// Copy this file to mail.php (gitignored) and fill in real values.
+$config = array(
+
+    'mail' => array(
+        'port'         => 25,
+        'protocol'     => 'smtp',
+        'host'         => '<smtp-host>',
+        'username'     => '<smtp-username>',
+        'password'     => '<smtp-password>',
+        'from_name'    => '<smtp-from-name>',
+        'timeout'      => 30,
+        'smtp_auth'    => true,
+        'smtp_secure'  => 'tls',
+        'smtp_options' => array(
+            'ssl' => array(
+                'verify_peer'       => false,
+                'verify_peer_name'  => false,
+                'allow_self_signed' => true
+            )
+        )
+    )
+
+);

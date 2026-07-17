@@ -1,0 +1,21 @@
+# Turn on URL rewriting
+RewriteEngine On
+
+# Installation directory
+RewriteBase /
+
+# Redirect www to non-www
+RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
+RewriteRule ^(.*)$ https://%1/$1 [R=301,L]
+
+# Pick the front controller for this environment (local dev VM hosts always
+# use the .local TLD), without touching the request yet
+RewriteCond %{HTTP_HOST} \.local$ [NC]
+RewriteRule ^ - [E=FRONT_CONTROLLER:index.dev.php]
+
+RewriteCond %{ENV:FRONT_CONTROLLER} ^$
+RewriteRule ^ - [E=FRONT_CONTROLLER:index.php]
+
+# Allow any files or directories that exist to be displayed directly
+RewriteCond %{REQUEST_FILENAME} !^(.+)\.(js|css|gif|png|PNG|jpe?g|JPE?G|webp|swf|ico|txt|html|eot|svg|ttf|woff|pdf|mp4|xml|json|geojson)$
+RewriteRule ^(.*)$ %{ENV:FRONT_CONTROLLER} [QSA,L]

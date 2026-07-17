@@ -1,0 +1,13 @@
+<?php
+
+// Copy this file to db.php (gitignored) and fill in real values.
+$config = array(
+
+    'db' => array(
+        'host'     => 'mariadb',
+        'user'     => '<db-user>',
+        'password' => '<db-password>',
+        'name'     => '<db-name>'
+    )
+
+);

@@ -1,0 +1,12 @@
+<?php
+
+// Copy this file to keys.php (gitignored) and fill in a real value,
+// DIFFERENT from the one used in dev.
+// Generate with: php -r "echo bin2hex(random_bytes(32));"
+$config = array(
+
+    'encryption' => array(
+        'secret' => '<64 hex chars>'
+    )
+
+);

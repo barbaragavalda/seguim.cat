@@ -1,0 +1,46 @@
+{
+  "name": "bgavalda/tv-tracker",
+  "description": "",
+  "license": "proprietary",
+  "authors": [
+    {
+      "name": "Barbara Gavalda",
+      "email": "barbaragavalda@gmail.com"
+    }
+  ],
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "git@bitbucket.org:optisistem/freimguork-core.git"
+    },
+    {
+      "type": "vcs",
+      "url": "git@bitbucket.org:optisistem/freimguork-appacman.git"
+    }
+  ],
+  "require": {
+    "php": "^8.5",
+    "optisistem/freimguork-core": "dev-master",
+    "optisistem/freimguork-appacman": "dev-master",
+    "ext-gettext": "*",
+    "ext-intl": "*",
+    "ext-libxml": "*",
+    "ext-pdo": "*",
+    "ext-simplexml": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "": "src/"
+    }
+  },
+  "scripts": {
+    "post-install-cmd": ["Appacman\\Composer\\AssetPublisher::publish"],
+    "post-update-cmd": ["Appacman\\Composer\\AssetPublisher::publish"]
+  },
+  "minimum-stability": "dev",
+  "config": {
+    "allow-plugins": {
+      "composer/installers": true
+    }
+  }
+}
