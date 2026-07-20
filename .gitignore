@@ -13,6 +13,8 @@ config/prod/keys.php
 config/mail.php
 config/api/dev/webservice.php
 config/api/prod/webservice.php
+config/api/dev/thetvdb.php
+config/api/prod/thetvdb.php
 
 web/upload/*
 !web/upload/.gitkeep

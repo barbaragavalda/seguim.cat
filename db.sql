@@ -397,4 +397,67 @@ CREATE TABLE `user_token` (
   KEY `id_user` (`id_user`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ----------------------------
+-- Table structure for series (local lazy mirror of TheTVDB series)
+-- ----------------------------
+DROP TABLE IF EXISTS `series`;
+CREATE TABLE `series` (
+  `id_series` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `tvdb_id` int(10) unsigned NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `overview` text,
+  `image` varchar(500) DEFAULT NULL,
+  `year` varchar(4) DEFAULT NULL,
+  `status` varchar(50) DEFAULT NULL,
+  `slug` varchar(255) DEFAULT NULL,
+  `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_series`) USING BTREE,
+  UNIQUE KEY `tvdb_id` (`tvdb_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for episode (local lazy mirror of TheTVDB episodes)
+-- ----------------------------
+DROP TABLE IF EXISTS `episode`;
+CREATE TABLE `episode` (
+  `id_episode` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_series` mediumint(8) unsigned NOT NULL,
+  `tvdb_id` int(10) unsigned NOT NULL,
+  `season_number` smallint(5) unsigned NOT NULL DEFAULT 0,
+  `episode_number` smallint(5) unsigned NOT NULL DEFAULT 0,
+  `name` varchar(255) DEFAULT NULL,
+  `overview` text,
+  `aired` date DEFAULT NULL,
+  `image` varchar(500) DEFAULT NULL,
+  `runtime` smallint(5) unsigned DEFAULT NULL,
+  `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_episode`) USING BTREE,
+  UNIQUE KEY `tvdb_id` (`tvdb_id`),
+  KEY `id_series` (`id_series`, `season_number`, `episode_number`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_watchlist
+-- ----------------------------
+DROP TABLE IF EXISTS `user_watchlist`;
+CREATE TABLE `user_watchlist` (
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_series` mediumint(8) unsigned NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user`, `id_series`) USING BTREE,
+  KEY `id_series` (`id_series`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_episode_watched (presence = watched; DELETE = unwatched)
+-- ----------------------------
+DROP TABLE IF EXISTS `user_episode_watched`;
+CREATE TABLE `user_episode_watched` (
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_episode` mediumint(8) unsigned NOT NULL,
+  `watched_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user`, `id_episode`) USING BTREE,
+  KEY `id_episode` (`id_episode`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

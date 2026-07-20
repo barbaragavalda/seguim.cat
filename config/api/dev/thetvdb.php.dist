@@ -1,0 +1,12 @@
+<?php
+
+// Copy this file to thetvdb.php (gitignored) and fill in a real value.
+// Get an API key at https://thetvdb.com/dashboard/account/apikey
+$config = array(
+
+    'thetvdb' => array(
+        'apikey' => '<your TheTVDB v4 API key>',
+        'pin'    => null, // only needed for subscriber-model keys
+    )
+
+);
