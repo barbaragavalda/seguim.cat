@@ -3,13 +3,14 @@
 // Copy this file to webservice.php (gitignored) and fill in a real value.
 // Generate with: php -r "echo bin2hex(random_bytes(32));"
 // default_token identifies the Flutter app itself (sent as the Authorization
-// header on entities_without_token routes, e.g. register/login) - it is not
-// a per-user secret, see Webservice\Controller\WebserviceController::checkToken().
+// header on every /api request) - it is not a per-user secret, see
+// Webservice\Controller\WebserviceController::checkToken(). Whether a given
+// entity needs a user's own token on top of this is declared by the
+// controller itself (override requiresUserToken() => false), not here.
 $config = array(
 
     'webservice' => array(
-        'default_token'          => '<64 hex chars>',
-        'entities_without_token' => array('register', 'login')
+        'default_token' => '<64 hex chars>'
     )
 
 );
