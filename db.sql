@@ -395,12 +395,22 @@ COMMIT;
 DROP TABLE IF EXISTS `user`;
 CREATE TABLE `user` (
   `id_user` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
-  `email` varchar(255) NOT NULL,
+  -- AES-256-GCM ciphertext (Core\Model\Encryptor\TwoWay), not the plaintext
+  -- email - `text` because the encrypted form is noticeably longer than the
+  -- plaintext (nonce+tag+hex-encoding overhead), a fixed varchar(255) would
+  -- silently truncate a long real address
+  `email` text NOT NULL,
+  -- deterministic HMAC-SHA256 of the plaintext email (Core\Model\Encryptor\
+  -- BlindIndex), the actual uniqueness/lookup key - `email` itself can't be
+  -- one: TwoWay's random nonce means the same address encrypts to a
+  -- different ciphertext every time, so a UNIQUE KEY on `email` would never
+  -- collide and silently stop enforcing uniqueness at all
+  `email_bidx` char(64) NOT NULL,
   `password` varchar(255) NOT NULL,
   `username` varchar(20) NOT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user`) USING BTREE,
-  UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `email_bidx` (`email_bidx`),
   -- case-insensitive under whatever *_ci collation utf8mb4 defaults to on
   -- this server, so "Bar"/"bar" already collide without any extra
   -- normalization - confirmed empirically, not assumed from the charset name
@@ -414,6 +424,10 @@ DROP TABLE IF EXISTS `user_token`;
 CREATE TABLE `user_token` (
   `id_user_token` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
+  -- SHA-256 hash of the token (Webservice\Model\UserToken::hash()), not the
+  -- plaintext - only the client ever sees the real value, so DB read access
+  -- alone can't be used to hijack a session; still varchar(64) since a hash
+  -- is exactly the same length as the token it replaced
   `token` varchar(64) NOT NULL,
   `device_label` varchar(255) DEFAULT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
