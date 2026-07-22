@@ -7,7 +7,7 @@ use Api\Model\Episode;
 use Api\Model\WatchedEpisode;
 use Core\Routing\Attribute\Route;
 
-#[Route('/episode/{tvdbId}/watched', methods: ['DELETE'], requirements: ['tvdbId' => '\d+'], name: 'api.episode.unwatch')]
+#[Route('/episode/{tvdbId}/watched', methods: ['DELETE'], name: 'api.episode.unwatch', requirements: ['tvdbId' => '\d+'])]
 class Unwatch extends Controller
 {
 

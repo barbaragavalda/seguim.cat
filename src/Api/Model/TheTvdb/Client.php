@@ -3,6 +3,7 @@
 namespace Api\Model\TheTvdb;
 
 use Core\Utils\Config;
+use RuntimeException;
 
 class Client
 {
@@ -123,7 +124,7 @@ class Client
         // "cannot access offset of type string on string" TypeError below
         $tvdbConfig = $this->config->get('thetvdb');
         if (!is_array($tvdbConfig) || empty($tvdbConfig['apikey'])) {
-            throw new \RuntimeException(
+            throw new RuntimeException(
                 'TheTVDB API key not configured - copy config/api/dev/thetvdb.php.dist to '
                 . 'thetvdb.php and fill in a real apikey'
             );
@@ -134,10 +135,15 @@ class Client
             $body['pin'] = $tvdbConfig['pin'];
         }
 
-        $response = $this->httpRequest('POST', self::BASE_URL . '/login', array('Content-Type: application/json'), $body);
+        $response = $this->httpRequest(
+            'POST',
+            self::BASE_URL . '/login',
+            array('Content-Type: application/json'),
+            $body
+        );
         $token    = $response['data']['token'] ?? null;
         if (!$token) {
-            throw new \RuntimeException('TheTVDB login failed');
+            throw new RuntimeException('TheTVDB login failed');
         }
 
         $this->writeCachedToken($token);

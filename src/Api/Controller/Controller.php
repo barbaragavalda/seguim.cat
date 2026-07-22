@@ -2,6 +2,8 @@
 
 namespace Api\Controller;
 
-abstract class Controller extends \Webservice\Controller\WebserviceController
+use Webservice\Controller\WebserviceController;
+
+abstract class Controller extends WebserviceController
 {
 }

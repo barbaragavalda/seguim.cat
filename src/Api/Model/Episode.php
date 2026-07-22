@@ -59,15 +59,15 @@ class Episode extends Model
 
     private function isStale(int $idSeries): bool
     {
-        $sql    = '
+        $sql      = '
             SELECT MAX(synced_at) AS synced_at
             FROM episode
             WHERE id_series = :id_series
         ';
-        $params = array(
+        $params   = array(
             'id_series' => array('value' => $idSeries, 'type' => PDO::PARAM_INT),
         );
-        $result = $this->mysql->query($sql, $params);
+        $result   = $this->mysql->query($sql, $params);
         $syncedAt = $result[0]['synced_at'] ?? null;
         if (empty($syncedAt)) {
             return true;
@@ -77,7 +77,7 @@ class Episode extends Model
 
     private function upsert(int $idSeries, array $data): void
     {
-        $sql    = '
+        $sql           = '
             INSERT INTO episode (
                 id_series, tvdb_id, season_number, episode_number, name, overview, aired, image, runtime, synced_at
             )

@@ -66,7 +66,7 @@ class Series extends Model
 
     private function upsert(int $tvdbId, array $data): void
     {
-        $sql    = '
+        $sql      = '
             INSERT INTO series (tvdb_id, name, overview, image, year, status, slug, synced_at)
             VALUES (:tvdb_id, :name, :overview, :image, :year, :status, :slug, NOW())
             ON DUPLICATE KEY UPDATE
@@ -79,8 +79,8 @@ class Series extends Model
         $year     = $data['year'] ?? null;
         // SeriesBaseRecord's status is an object ({id, name, recordType,
         // keepUpdated}), not a plain string like on a /search SearchResult
-        $status   = $data['status']['name'] ?? null;
-        $slug     = $data['slug'] ?? null;
+        $status = $data['status']['name'] ?? null;
+        $slug   = $data['slug'] ?? null;
 
         $params = array(
             'tvdb_id'      => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),

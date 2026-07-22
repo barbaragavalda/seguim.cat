@@ -4,15 +4,15 @@ namespace Api\Controller\Series;
 
 use Api\Controller\Controller;
 use Api\Model\Episode;
-use Api\Model\TheTvdb\Client;
-use Api\Model\Watchlist;
-use Api\Model\WatchedEpisode;
 use Api\Model\Series as SeriesModel;
+use Api\Model\TheTvdb\Client;
+use Api\Model\WatchedEpisode;
+use Api\Model\Watchlist;
 use Core\Controller\CacheManager;
 use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
 
-#[Route('/series/{tvdbId}', methods: ['GET'], requirements: ['tvdbId' => '\d+'], name: 'api.series.detail')]
+#[Route('/series/{tvdbId}', methods: ['GET'], name: 'api.series.detail', requirements: ['tvdbId' => '\d+'])]
 class Detail extends Controller
 {
 

@@ -3,14 +3,14 @@
 namespace Api\Controller\Watchlist;
 
 use Api\Controller\Controller;
-use Api\Model\TheTvdb\Client;
 use Api\Model\Series;
+use Api\Model\TheTvdb\Client;
 use Api\Model\Watchlist;
 use Core\Controller\CacheManager;
 use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
 
-#[Route('/watchlist/{tvdbId}', methods: ['POST'], requirements: ['tvdbId' => '\d+'], name: 'api.watchlist.add')]
+#[Route('/watchlist/{tvdbId}', methods: ['POST'], name: 'api.watchlist.add', requirements: ['tvdbId' => '\d+'])]
 class Add extends Controller
 {
 

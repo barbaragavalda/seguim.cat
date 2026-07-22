@@ -7,7 +7,7 @@ use Api\Model\Episode;
 use Api\Model\WatchedEpisode;
 use Core\Routing\Attribute\Route;
 
-#[Route('/episode/{tvdbId}/watched', methods: ['POST'], requirements: ['tvdbId' => '\d+'], name: 'api.episode.watch')]
+#[Route('/episode/{tvdbId}/watched', methods: ['POST'], name: 'api.episode.watch', requirements: ['tvdbId' => '\d+'])]
 class Watch extends Controller
 {
 

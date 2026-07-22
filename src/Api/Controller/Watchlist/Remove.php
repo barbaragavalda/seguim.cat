@@ -7,7 +7,7 @@ use Api\Model\Series;
 use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
 
-#[Route('/watchlist/{tvdbId}', methods: ['DELETE'], requirements: ['tvdbId' => '\d+'], name: 'api.watchlist.remove')]
+#[Route('/watchlist/{tvdbId}', methods: ['DELETE'], name: 'api.watchlist.remove', requirements: ['tvdbId' => '\d+'])]
 class Remove extends Controller
 {
 
