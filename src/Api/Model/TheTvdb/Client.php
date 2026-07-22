@@ -105,7 +105,6 @@ class Client
         }
 
         $output = curl_exec($curl);
-        curl_close($curl);
 
         $decoded = $output !== false ? json_decode($output, true) : null;
         return is_array($decoded) ? $decoded : array();

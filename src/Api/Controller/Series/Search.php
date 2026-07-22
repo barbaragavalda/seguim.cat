@@ -17,6 +17,11 @@ class Search extends Controller
         parent::__construct($config, $modelCache);
     }
 
+    protected function requiresUserToken(): bool
+    {
+        return false;
+    }
+
     protected function run(): void
     {
         $query = trim((string) ($_GET['query'] ?? ''));
