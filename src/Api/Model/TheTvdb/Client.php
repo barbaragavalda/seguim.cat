@@ -25,10 +25,17 @@ class Client
         $this->tokenCacheFile = $this->tokenCacheDir . 'token.json';
     }
 
-    public function search(string $query): array
+    public function search(string $query, int $page = 0): array
     {
-        $response = $this->request('GET', '/search', array('query' => $query, 'type' => 'series'));
-        return $response['data'] ?? array();
+        $response = $this->request(
+            'GET',
+            '/search',
+            array('query' => $query, 'type' => 'series', 'page' => $page)
+        );
+        return array(
+            'results' => $response['data'] ?? array(),
+            'hasMore' => ($response['links']['next'] ?? null) !== null,
+        );
     }
 
     public function getSeries(int $tvdbId): array

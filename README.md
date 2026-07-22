@@ -20,7 +20,7 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
 
     | Method | Path                        | Purpose                                              |
     |--------|-----------------------------|-------------------------------------------------------|
-    | GET    | `/api/series/search`        | Search TheTVDB series (`?query=`)                     |
+    | GET    | `/api/series/search`        | Search TheTVDB series (`?query=`, `?page=`, 0-based - response includes `hasMore`) |
     | GET    | `/api/series/{tvdbId}`      | Series detail + episode list (lazy-mirrors from TheTVDB) |
     | GET    | `/api/watchlist`            | The logged-in user's watchlist                        |
     | POST   | `/api/watchlist/{tvdbId}`   | Add a series to the watchlist                          |

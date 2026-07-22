@@ -29,8 +29,11 @@ class Search extends Controller
             $this->error = 'A search query is required.';
             return;
         }
+        $page = max(0, (int) ($_GET['page'] ?? 0));
 
-        $this->assign('results', $this->client->search($query));
+        $result = $this->client->search($query, $page);
+        $this->assign('results', $result['results']);
+        $this->assign('hasMore', $result['hasMore']);
     }
 
 }
