@@ -10,6 +10,28 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ----------------------------
+-- Table structure for appacman_app_config
+-- Queried unconditionally by Webservice\Model\App::onMaintenance() on every
+-- api request; missing it doesn't just log a warning, it triggers dev-mode
+-- debug output that runs before headers are sent and silently drops the
+-- rest of the response's headers (Access-Control-Allow-Origin included).
+-- ----------------------------
+DROP TABLE IF EXISTS `appacman_app_config`;
+CREATE TABLE `appacman_app_config` (
+  `id_appacman_app_config` tinyint(3) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `platform` varchar(255) DEFAULT NULL,
+  `value` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id_appacman_app_config`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8;
+
+BEGIN;
+INSERT INTO `appacman_app_config` VALUES (1, 'VERSION', 'ios', '1.0.0');
+INSERT INTO `appacman_app_config` VALUES (2, 'VERSION', 'android', '1.0.0');
+INSERT INTO `appacman_app_config` VALUES (3, 'MAINTENANCE', NULL, '');
+COMMIT;
+
+-- ----------------------------
 -- Table structure for appacman_block
 -- ----------------------------
 DROP TABLE IF EXISTS `appacman_block`;
@@ -375,10 +397,14 @@ CREATE TABLE `user` (
   `id_user` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `email` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
-  `name` varchar(255) NOT NULL,
+  `username` varchar(20) NOT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user`) USING BTREE,
-  UNIQUE KEY `email` (`email`)
+  UNIQUE KEY `email` (`email`),
+  -- case-insensitive under whatever *_ci collation utf8mb4 defaults to on
+  -- this server, so "Bar"/"bar" already collide without any extra
+  -- normalization - confirmed empirically, not assumed from the charset name
+  UNIQUE KEY `username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------

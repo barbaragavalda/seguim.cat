@@ -13,7 +13,9 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
 - **`api` (`/api`, `src/Api/`)** — the actual product backend, consumed by the (not yet built)
   Flutter client:
   - Auth (from `freimguork-webservice`, via the `vendorApps` config key — not duplicated here):
-    `POST /api/register`, `POST /api/login`, `POST /api/logout`.
+    `POST /api/register` (`email`, `password`, `username` — 3-20 chars, letters/numbers/`_`/`.`,
+    unique), `POST /api/login`, `POST /api/logout`, `DELETE /api/account` (deletes the user and
+    revokes every device token).
   - TV series tracking (this project's own code, `src/Api/{Controller,Model}/`):
 
     | Method | Path                        | Purpose                                              |
