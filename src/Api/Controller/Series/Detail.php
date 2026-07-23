@@ -49,11 +49,7 @@ class Detail extends Controller
         }
         unset($episode);
 
-        $translationRows = (new SerieLang())->syncForSerie($info['id_serie'], $tvdbId, $this->client);
-        $translations     = array();
-        foreach ($translationRows as $language => $row) {
-            $translations[$language] = array('name' => $row['name'], 'overview' => $row['overview']);
-        }
+        $translations = (new SerieLang())->syncForSerie($info['id_serie'], $tvdbId, $this->client);
 
         $this->assign('series', $info);
         $this->assign('translations', $translations);

@@ -238,11 +238,16 @@ CREATE TABLE `appacman_lang` (
   `culture` varchar(10) NOT NULL,
   `order` tinyint(3) unsigned DEFAULT NULL,
   PRIMARY KEY (`id_appacman_lang`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8;
 
+-- id 3 (English) is used by Api\Model\SerieLang (serie_lang.id_appacman_lang)
+-- for TheTVDB translations - not one of Appacman's own 'languages' (still
+-- just ['ca'], see config/projects.php), added here since this is the
+-- project's one shared language lookup table
 BEGIN;
 INSERT INTO `appacman_lang` VALUES (1, 'Català', 'ca', 1);
 INSERT INTO `appacman_lang` VALUES (2, 'Castellano', 'es', 2);
+INSERT INTO `appacman_lang` VALUES (3, 'English', 'en', 3);
 COMMIT;
 
 -- ----------------------------
@@ -466,16 +471,18 @@ CREATE TABLE `serie` (
 -- Table structure for serie_lang (translated name/overview, lazily synced
 -- from TheTVDB's GET /series/{id}/translations/{language} - NOT the same as
 -- serie.nameTranslations/overviewTranslations, which are only lists of
--- language codes that HAVE a translation, not the translated text itself)
+-- language codes that HAVE a translation, not the translated text itself.
+-- id_<table>_lang / id_<table> / id_appacman_lang is this project's existing
+-- _lang companion-table convention, same shape as appacman_content_lang etc.)
 -- ----------------------------
 DROP TABLE IF EXISTS `serie_lang`;
 CREATE TABLE `serie_lang` (
   `id_serie_lang` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_serie` mediumint(8) unsigned NOT NULL,
-  -- this app's own 2-letter language code (ca/es/en), not TheTVDB's own
-  -- 3-letter one (cat/spa/eng) - kept as a translation boundary so a future
-  -- TheTVDB code change/new app language only touches Api\Model\SerieLang
-  `language` char(2) NOT NULL,
+  -- matches this project's existing appacman_lang lookup table (see above),
+  -- extended with id 3 = English for this - not TheTVDB's own 3-letter
+  -- language code (cat/spa/eng), that mapping lives in Api\Model\SerieLang
+  `id_appacman_lang` tinyint(3) unsigned NOT NULL,
   -- both nullable: a NULL row (not a missing row) means TheTVDB was asked
   -- and confirmed it has no translation in that language - storing that
   -- fact, with its own synced_at, is what stops every request from
@@ -484,7 +491,7 @@ CREATE TABLE `serie_lang` (
   `overview` text,
   `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_serie_lang`) USING BTREE,
-  UNIQUE KEY `id_serie_language` (`id_serie`, `language`)
+  UNIQUE KEY `id_serie_lang_lookup` (`id_serie`, `id_appacman_lang`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
