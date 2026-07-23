@@ -15,7 +15,11 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
   - Auth (from `freimguork-webservice`, via the `vendorApps` config key — not duplicated here):
     `POST /api/register` (`email`, `password`, `username` — 3-20 chars, letters/numbers/`_`/`.`,
     unique), `POST /api/login`, `POST /api/logout`, `DELETE /api/account` (deletes the user and
-    revokes every device token).
+    revokes every device token), `POST /api/password/forgot` (`email` — always the same response
+    whether or not it's registered, emails a 6-digit code valid 15 min if it is),
+    `POST /api/password/reset` (`email`, `code`, `password` — max 5 wrong attempts before the code
+    is locked out; also revokes every device token, so a compromised account gets logged out
+    everywhere on reset).
   - TV series tracking (this project's own code, `src/Api/{Controller,Model}/`):
 
     | Method | Path                        | Purpose                                              |
@@ -51,7 +55,9 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
    - `config/api/dev/thetvdb.php`, `config/api/prod/thetvdb.php` — a real TheTVDB v4 `apikey`
      (get one at https://thetvdb.com/dashboard/account/apikey; `pin` is only needed for
      subscriber-model keys)
-   - `config/mail.php` if the project needs to send mail
+   - `config/mail.php` — real SMTP credentials, needed for `POST /api/password/forgot` to actually
+     deliver reset codes (in dev, if this isn't set up yet, the code is logged via `error_log()`
+     instead of failing the request - see `Webservice\Controller\ForgotPassword`)
 3. Create the database and import `db.sql` (Appacman's minimal schema + this project's own
    `user`/`user_token`/`series`/`episode`/`user_watchlist`/`user_episode_watched` tables — no admin
    user seeded, see below).
@@ -112,7 +118,7 @@ assign (usually `1` for the first user).
 
 - The Flutter client itself (hasn't been started)
 - Movies, ratings, "mark whole season watched", full-catalog `/updates`-based sync
-- Rate-limiting on login/register, password reset/forgot-password
+- Rate-limiting on login/register (password reset/forgot-password is done, see above)
 - Composer plugin conversion (`AssetPublisher` is still a script wired by hand in `composer.json`)
 - Automated tests / CI
 - `Cronjob`/`Import` sub-projects (add them to `config/projects.php` if ever needed, following the

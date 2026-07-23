@@ -148,7 +148,6 @@ class Client
 
         $output     = curl_exec($curl);
         $httpStatus = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        curl_close($curl);
 
         $decoded = $output !== false ? json_decode($output, true) : null;
         return array('httpStatus' => $httpStatus, 'body' => is_array($decoded) ? $decoded : array());

@@ -22,6 +22,11 @@ class Detail extends Controller
         parent::__construct($config, $modelCache);
     }
 
+    protected function requiresUserToken(): bool
+    {
+        return false;
+    }
+
     protected function run(): void
     {
         $tvdbId = (int) $this->getParam('tvdbId');
@@ -43,7 +48,12 @@ class Detail extends Controller
         $series->updateSeasonCount($seasonCount);
         $info['season_count'] = $seasonCount;
 
-        $watchedIds = (new WatchedEpisode())->watchedEpisodeIds($this->user->getID(), $info['id_serie']);
+        // $this->user is null for an anonymous request (default_token, no
+        // real user logged in) - series detail itself is public, only the
+        // per-user watched/watchlist flags need a real user
+        $watchedIds = $this->user !== null
+            ? (new WatchedEpisode())->watchedEpisodeIds($this->user->getID(), $info['id_serie'])
+            : [];
         foreach ($episodeRows as &$episode) {
             $episode['watched'] = in_array($episode['id_episode'], $watchedIds, true);
         }
@@ -54,13 +64,21 @@ class Detail extends Controller
         // prefixed - see Core\Utils\Language::initLanguage()) - only that
         // one language's translation is fetched/returned, not every
         // language this app supports
-        $translation = (new SerieLang())->syncForLanguage($info['id_serie'], $tvdbId, $this->config->getLanguage(), $this->client);
+        $translation      = (new SerieLang())->syncForLanguage(
+            $info['id_serie'],
+            $tvdbId,
+            $this->config->getLanguage(),
+            $this->client
+        );
         $info['name']     = $translation['name'];
         $info['overview'] = $translation['overview'];
 
         $this->assign('series', $info);
         $this->assign('episodes', $episodeRows);
-        $this->assign('in_watchlist', (new Watchlist())->has($this->user->getID(), $info['id_serie']));
+        $this->assign(
+            'in_watchlist',
+            $this->user !== null && (new Watchlist())->has($this->user->getID(), $info['id_serie'])
+        );
     }
 
 }

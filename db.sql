@@ -551,4 +551,25 @@ CREATE TABLE `user_episode_watched` (
   KEY `id_episode` (`id_episode`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ----------------------------
+-- Table structure for password_reset (Webservice\Model\PasswordReset - this
+-- package doesn't own the user/user_token schema either, see those tables'
+-- own comments above)
+-- ----------------------------
+DROP TABLE IF EXISTS `password_reset`;
+CREATE TABLE `password_reset` (
+  `id_password_reset` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  -- SHA-256 hash of the 6-digit code, same reasoning as user_token.token
+  `code` varchar(64) NOT NULL,
+  -- locks the code out after PasswordReset::MAX_ATTEMPTS (5) wrong guesses -
+  -- a 6-digit code alone (1M combinations) isn't brute-force-resistant
+  -- without this
+  `attempts` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` timestamp NOT NULL,
+  PRIMARY KEY (`id_password_reset`) USING BTREE,
+  KEY `id_user` (`id_user`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;
