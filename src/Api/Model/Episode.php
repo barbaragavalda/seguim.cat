@@ -36,36 +36,36 @@ class Episode extends Model
      * returns the local mirror rows for the series' episodes, fetching/
      * upserting them from TheTVDB first if missing or stale
      */
-    public function syncForSeries(int $idSeries, int $tvdbSeriesId, Client $client): array
+    public function syncForSeries(int $idSerie, int $tvdbSeriesId, Client $client): array
     {
-        if ($this->isStale($idSeries)) {
+        if ($this->isStale($idSerie)) {
             $episodes = $client->getSeriesEpisodes($tvdbSeriesId);
             foreach ($episodes as $episode) {
-                $this->upsert($idSeries, $episode);
+                $this->upsert($idSerie, $episode);
             }
         }
 
         $sql    = '
             SELECT *
             FROM episode
-            WHERE id_series = :id_series
+            WHERE id_serie = :id_serie
             ORDER BY season_number, episode_number
         ';
         $params = array(
-            'id_series' => array('value' => $idSeries, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
         );
         return $this->mysql->query($sql, $params);
     }
 
-    private function isStale(int $idSeries): bool
+    private function isStale(int $idSerie): bool
     {
         $sql      = '
             SELECT MAX(synced_at) AS synced_at
             FROM episode
-            WHERE id_series = :id_series
+            WHERE id_serie = :id_serie
         ';
         $params   = array(
-            'id_series' => array('value' => $idSeries, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
         );
         $result   = $this->mysql->query($sql, $params);
         $syncedAt = $result[0]['synced_at'] ?? null;
@@ -75,14 +75,14 @@ class Episode extends Model
         return strtotime($syncedAt) <= (time() - self::TTL_SECONDS);
     }
 
-    private function upsert(int $idSeries, array $data): void
+    private function upsert(int $idSerie, array $data): void
     {
         $sql           = '
             INSERT INTO episode (
-                id_series, tvdb_id, season_number, episode_number, name, overview, aired, image, runtime, synced_at
+                id_serie, tvdb_id, season_number, episode_number, name, overview, aired, image, runtime, synced_at
             )
             VALUES (
-                :id_series, :tvdb_id, :season_number, :episode_number, :name, :overview, :aired, :image, :runtime, NOW()
+                :id_serie, :tvdb_id, :season_number, :episode_number, :name, :overview, :aired, :image, :runtime, NOW()
             )
             ON DUPLICATE KEY UPDATE
                 season_number = :season_number_upd, episode_number = :episode_number_upd,
@@ -99,7 +99,7 @@ class Episode extends Model
         $runtime       = $data['runtime'] ?? null;
 
         $params = array(
-            'id_series'          => array('value' => $idSeries, 'type' => PDO::PARAM_INT),
+            'id_serie'           => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
             'tvdb_id'            => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),
             'season_number'      => array('value' => $seasonNumber, 'type' => PDO::PARAM_INT),
             'season_number_upd'  => array('value' => $seasonNumber, 'type' => PDO::PARAM_INT),

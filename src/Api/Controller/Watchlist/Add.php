@@ -32,7 +32,7 @@ class Add extends Controller
             return;
         }
 
-        (new Watchlist())->add($this->user->getID(), $info['id_series']);
+        (new Watchlist())->add($this->user->getID(), $info['id_serie']);
     }
 
 }

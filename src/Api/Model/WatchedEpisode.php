@@ -35,19 +35,19 @@ class WatchedEpisode extends Model
     }
 
     /**
-     * @return int[] ids (episode.id_episode) of the user's watched episodes within $idSeries
+     * @return int[] ids (episode.id_episode) of the user's watched episodes within $idSerie
      */
-    public function watchedEpisodeIds(int $idUser, int $idSeries): array
+    public function watchedEpisodeIds(int $idUser, int $idSerie): array
     {
         $sql    = '
             SELECT w.id_episode
             FROM user_episode_watched w
             INNER JOIN episode e ON e.id_episode = w.id_episode
-            WHERE w.id_user = :id_user AND e.id_series = :id_series
+            WHERE w.id_user = :id_user AND e.id_serie = :id_serie
         ';
         $params = array(
-            'id_user'   => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_series' => array('value' => $idSeries, 'type' => PDO::PARAM_INT),
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
         );
         return array_column($this->mysql->query($sql, $params), 'id_episode');
     }

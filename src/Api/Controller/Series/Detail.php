@@ -5,6 +5,7 @@ namespace Api\Controller\Series;
 use Api\Controller\Controller;
 use Api\Model\Episode;
 use Api\Model\Series as SeriesModel;
+use Api\Model\SerieLang;
 use Api\Model\TheTvdb\Client;
 use Api\Model\WatchedEpisode;
 use Api\Model\Watchlist;
@@ -32,17 +33,32 @@ class Detail extends Controller
             return;
         }
 
-        $episodeRows = (new Episode())->syncForSeries($info['id_series'], $tvdbId, $this->client);
+        $episodeRows = (new Episode())->syncForSeries($info['id_serie'], $tvdbId, $this->client);
 
-        $watchedIds = (new WatchedEpisode())->watchedEpisodeIds($this->user->getID(), $info['id_series']);
+        // regular numbered seasons only (season 0/specials excluded) among
+        // this series' own already-synced episodes - see db.sql's
+        // season_count comment for why this is preferred over TheTVDB's own
+        // /extended `seasons` array
+        $seasonCount = count(array_unique(array_filter(array_column($episodeRows, 'season_number'))));
+        $series->updateSeasonCount($seasonCount);
+        $info['season_count'] = $seasonCount;
+
+        $watchedIds = (new WatchedEpisode())->watchedEpisodeIds($this->user->getID(), $info['id_serie']);
         foreach ($episodeRows as &$episode) {
             $episode['watched'] = in_array($episode['id_episode'], $watchedIds, true);
         }
         unset($episode);
 
+        $translationRows = (new SerieLang())->syncForSerie($info['id_serie'], $tvdbId, $this->client);
+        $translations     = array();
+        foreach ($translationRows as $language => $row) {
+            $translations[$language] = array('name' => $row['name'], 'overview' => $row['overview']);
+        }
+
         $this->assign('series', $info);
+        $this->assign('translations', $translations);
         $this->assign('episodes', $episodeRows);
-        $this->assign('in_watchlist', (new Watchlist())->has($this->user->getID(), $info['id_series']));
+        $this->assign('in_watchlist', (new Watchlist())->has($this->user->getID(), $info['id_serie']));
     }
 
 }

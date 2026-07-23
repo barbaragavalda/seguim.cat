@@ -17,7 +17,7 @@ class Remove extends Controller
 
         $series = new Series();
         if ($series->loadWithTvdbId($tvdbId)) {
-            (new Watchlist())->remove($this->user->getID(), $series->getInfo()['id_series']);
+            (new Watchlist())->remove($this->user->getID(), $series->getInfo()['id_serie']);
         }
     }
 

@@ -438,11 +438,11 @@ CREATE TABLE `user_token` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for series (local lazy mirror of TheTVDB series)
+-- Table structure for serie (local lazy mirror of TheTVDB series)
 -- ----------------------------
-DROP TABLE IF EXISTS `series`;
-CREATE TABLE `series` (
-  `id_series` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+DROP TABLE IF EXISTS `serie`;
+CREATE TABLE `serie` (
+  `id_serie` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `tvdb_id` int(10) unsigned NOT NULL,
   `name` varchar(255) NOT NULL,
   `overview` text,
@@ -450,9 +450,41 @@ CREATE TABLE `series` (
   `year` varchar(4) DEFAULT NULL,
   `status` varchar(50) DEFAULT NULL,
   `slug` varchar(255) DEFAULT NULL,
+  `average_runtime` smallint(5) unsigned DEFAULT NULL,
+  -- regular numbered seasons only (season 0/specials excluded), derived
+  -- from our own already-synced 'official'-type local episodes rather than
+  -- TheTVDB's /extended `seasons` array, which mixes several season-type
+  -- schemes (official/dvd/absolute/alternate) in one list and would badly
+  -- overcount - confirmed empirically (22 entries for a 6-season show)
+  `season_count` tinyint(3) unsigned DEFAULT NULL,
   `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_series`) USING BTREE,
+  PRIMARY KEY (`id_serie`) USING BTREE,
   UNIQUE KEY `tvdb_id` (`tvdb_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for serie_lang (translated name/overview, lazily synced
+-- from TheTVDB's GET /series/{id}/translations/{language} - NOT the same as
+-- serie.nameTranslations/overviewTranslations, which are only lists of
+-- language codes that HAVE a translation, not the translated text itself)
+-- ----------------------------
+DROP TABLE IF EXISTS `serie_lang`;
+CREATE TABLE `serie_lang` (
+  `id_serie_lang` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_serie` mediumint(8) unsigned NOT NULL,
+  -- this app's own 2-letter language code (ca/es/en), not TheTVDB's own
+  -- 3-letter one (cat/spa/eng) - kept as a translation boundary so a future
+  -- TheTVDB code change/new app language only touches Api\Model\SerieLang
+  `language` char(2) NOT NULL,
+  -- both nullable: a NULL row (not a missing row) means TheTVDB was asked
+  -- and confirmed it has no translation in that language - storing that
+  -- fact, with its own synced_at, is what stops every request from
+  -- re-attempting the same doomed API call until the TTL expires
+  `name` varchar(255) DEFAULT NULL,
+  `overview` text,
+  `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_serie_lang`) USING BTREE,
+  UNIQUE KEY `id_serie_language` (`id_serie`, `language`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
@@ -461,7 +493,7 @@ CREATE TABLE `series` (
 DROP TABLE IF EXISTS `episode`;
 CREATE TABLE `episode` (
   `id_episode` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
-  `id_series` mediumint(8) unsigned NOT NULL,
+  `id_serie` mediumint(8) unsigned NOT NULL,
   `tvdb_id` int(10) unsigned NOT NULL,
   `season_number` smallint(5) unsigned NOT NULL DEFAULT 0,
   `episode_number` smallint(5) unsigned NOT NULL DEFAULT 0,
@@ -473,7 +505,7 @@ CREATE TABLE `episode` (
   `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_episode`) USING BTREE,
   UNIQUE KEY `tvdb_id` (`tvdb_id`),
-  KEY `id_series` (`id_series`, `season_number`, `episode_number`)
+  KEY `id_serie` (`id_serie`, `season_number`, `episode_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
@@ -482,10 +514,10 @@ CREATE TABLE `episode` (
 DROP TABLE IF EXISTS `user_watchlist`;
 CREATE TABLE `user_watchlist` (
   `id_user` mediumint(8) unsigned NOT NULL,
-  `id_series` mediumint(8) unsigned NOT NULL,
+  `id_serie` mediumint(8) unsigned NOT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_user`, `id_series`) USING BTREE,
-  KEY `id_series` (`id_series`)
+  PRIMARY KEY (`id_user`, `id_serie`) USING BTREE,
+  KEY `id_serie` (`id_serie`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------

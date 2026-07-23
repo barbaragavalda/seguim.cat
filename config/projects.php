@@ -11,7 +11,7 @@ $config = array(
     'api' => array(
         'app'        => 'Api',
         'folders'    => array('api'),
-        'languages'  => array('ca'),
+        'languages'  => array('ca', 'es', 'en'),
         'vendorApps' => array('Webservice')
     ),
 

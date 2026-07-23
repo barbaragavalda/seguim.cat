@@ -58,6 +58,19 @@ class Client
         return $response['data']['episodes'] ?? array();
     }
 
+    /**
+     * $tvdbLanguageCode is TheTVDB's own 3-letter code (e.g. "cat"/"spa"/
+     * "eng"), not this app's 2-letter one - see Api\Model\SerieLang for that
+     * mapping. Returns null (not an error/exception) when TheTVDB has no
+     * translation in that language - a normal, expected 404 for most shows
+     * in most languages, not a failure worth retrying or logging
+     */
+    public function getSeriesTranslation(int $tvdbSeriesId, string $tvdbLanguageCode): ?array
+    {
+        $response = $this->request('GET', '/series/' . $tvdbSeriesId . '/translations/' . $tvdbLanguageCode);
+        return !empty($response['data']) ? $response['data'] : null;
+    }
+
     private function request(string $method, string $path, array $query = array()): array
     {
         $url = self::BASE_URL . $path;
@@ -67,15 +80,16 @@ class Client
 
         $response = $this->call($method, $url, $this->getToken());
 
-        // the envelope's own "status" is the only reliable signal of a
-        // 401/expired-token condition (see call() for why the raw HTTP
-        // status code isn't used instead); retry exactly once, forcing a
-        // fresh login
-        if (($response['status'] ?? null) !== 'success') {
+        // retry exactly once, forcing a fresh login - but ONLY on a real
+        // 401, not on every non-"success" envelope: a legitimate 404 (e.g.
+        // getSeriesTranslation() asking for a language TheTVDB doesn't have)
+        // is a normal outcome, not an auth failure, and retrying it would
+        // just waste a forced re-login for the same expected 404 again
+        if ($response['httpStatus'] === 401) {
             $response = $this->call($method, $url, $this->login());
         }
 
-        return is_array($response) ? $response : array();
+        return $response['body'];
     }
 
     private function call(string $method, string $url, string $token): array
@@ -96,6 +110,8 @@ class Client
      * $params into CURLOPT_POSTFIELDS even for a GET request, which makes
      * libcurl silently send a POST instead) by never passing query params
      * as a separate array - request() already bakes them into $url.
+     *
+     * @return array{httpStatus: int, body: array}
      */
     private function httpRequest(string $method, string $url, array $headers, ?array $jsonBody = null): array
     {
@@ -111,10 +127,12 @@ class Client
             }
         }
 
-        $output = curl_exec($curl);
+        $output     = curl_exec($curl);
+        $httpStatus = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
 
         $decoded = $output !== false ? json_decode($output, true) : null;
-        return is_array($decoded) ? $decoded : array();
+        return array('httpStatus' => $httpStatus, 'body' => is_array($decoded) ? $decoded : array());
     }
 
     private function getToken(): string
@@ -147,7 +165,7 @@ class Client
             array('Content-Type: application/json'),
             $body
         );
-        $token    = $response['data']['token'] ?? null;
+        $token    = $response['body']['data']['token'] ?? null;
         if (!$token) {
             throw new RuntimeException('TheTVDB login failed');
         }
