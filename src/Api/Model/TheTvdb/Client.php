@@ -71,6 +71,25 @@ class Client
         return !empty($response['data']) ? $response['data'] : null;
     }
 
+    /**
+     * a series typically has dozens of background/fanart images (artwork
+     * type 3, confirmed via GET /artwork/types) - only the single
+     * highest-scored one is kept, not the full list. TheTVDB already
+     * returns them sorted by score descending, but that's re-checked here
+     * rather than assumed
+     */
+    public function getSeriesBackground(int $tvdbSeriesId): ?string
+    {
+        $response = $this->request('GET', '/series/' . $tvdbSeriesId . '/artworks', array('type' => 3));
+        $artworks = $response['data']['artworks'] ?? array();
+        if (empty($artworks)) {
+            return null;
+        }
+
+        usort($artworks, fn(array $a, array $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
+        return $artworks[0]['image'] ?? null;
+    }
+
     private function request(string $method, string $path, array $query = array()): array
     {
         $url = self::BASE_URL . $path;

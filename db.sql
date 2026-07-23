@@ -452,6 +452,12 @@ CREATE TABLE `serie` (
   -- name/overview live only in serie_lang (translated per language) - not
   -- duplicated here, even for a "default" language
   `image` varchar(500) DEFAULT NULL,
+  -- fanart/backdrop (TheTVDB artwork type 3, "Background"), from the
+  -- highest-scored of the (typically dozens of) results on the separate
+  -- GET /series/{id}/artworks?type=3 endpoint - not part of the base series
+  -- call above, one extra TheTVDB request per sync (same 24h TTL as the
+  -- rest of this table, so still cheap)
+  `background` varchar(500) DEFAULT NULL,
   -- both derived from TheTVDB's firstAired/lastAired (full dates - only the
   -- year is kept); replaces the old single `year` column, which was just
   -- firstAired's year and became redundant once year_start existed.

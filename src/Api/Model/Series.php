@@ -51,6 +51,11 @@ class Series extends Model
             return $this->info;
         }
 
+        // a separate TheTVDB endpoint (not part of the base series record
+        // above) - piggybacks on this same sync()/isStale() cycle rather
+        // than tracking its own staleness
+        $data['background'] = $client->getSeriesBackground($tvdbId);
+
         $this->upsert($tvdbId, $data);
         $this->loadWithTvdbId($tvdbId);
         return $this->info;
@@ -89,14 +94,15 @@ class Series extends Model
     private function upsert(int $tvdbId, array $data): void
     {
         $sql   = '
-            INSERT INTO serie (tvdb_id, image, year_start, year_end, status, slug, average_runtime, synced_at)
-            VALUES (:tvdb_id, :image, :year_start, :year_end, :status, :slug, :average_runtime, NOW())
+            INSERT INTO serie (tvdb_id, image, background, year_start, year_end, status, slug, average_runtime, synced_at)
+            VALUES (:tvdb_id, :image, :background, :year_start, :year_end, :status, :slug, :average_runtime, NOW())
             ON DUPLICATE KEY UPDATE
-                image = :image_upd, year_start = :year_start_upd, year_end = :year_end_upd,
+                image = :image_upd, background = :background_upd, year_start = :year_start_upd, year_end = :year_end_upd,
                 status = :status_upd, slug = :slug_upd,
                 average_runtime = :average_runtime_upd, synced_at = NOW()
         ';
-        $image = $data['image'] ?? null;
+        $image      = $data['image'] ?? null;
+        $background = $data['background'] ?? null;
         // firstAired/lastAired are full dates ("2004-09-22") - only the
         // year is stored, matching what was asked for; year_end reflects
         // the latest aired episode's year for an ongoing/"Continuing"
@@ -113,6 +119,8 @@ class Series extends Model
             'tvdb_id'             => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),
             'image'               => array('value' => $image, 'type' => PDO::PARAM_STR),
             'image_upd'           => array('value' => $image, 'type' => PDO::PARAM_STR),
+            'background'          => array('value' => $background, 'type' => PDO::PARAM_STR),
+            'background_upd'      => array('value' => $background, 'type' => PDO::PARAM_STR),
             'year_start'          => array('value' => $yearStart, 'type' => PDO::PARAM_STR),
             'year_start_upd'      => array('value' => $yearStart, 'type' => PDO::PARAM_STR),
             'year_end'            => array('value' => $yearEnd, 'type' => PDO::PARAM_STR),
