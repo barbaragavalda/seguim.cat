@@ -4,6 +4,7 @@ namespace Api\Controller\Watchlist;
 
 use Api\Controller\Controller;
 use Api\Model\Series;
+use Api\Model\SerieLang;
 use Api\Model\TheTvdb\Client;
 use Api\Model\Watchlist;
 use Core\Controller\CacheManager;
@@ -31,6 +32,11 @@ class Add extends Controller
             $this->error = '404';
             return;
         }
+
+        // so the watchlist has a name/overview ready in the user's own
+        // language immediately, instead of only after they first open this
+        // series' own detail endpoint
+        (new SerieLang())->syncForLanguage($info['id_serie'], $tvdbId, $this->config->getLanguage(), $this->client);
 
         (new Watchlist())->add($this->user->getID(), $info['id_serie']);
     }

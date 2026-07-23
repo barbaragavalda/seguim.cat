@@ -49,17 +49,25 @@ class Watchlist extends Model
         return count($this->mysql->query($sql, $params)) > 0;
     }
 
-    public function listForUser(int $idUser): array
+    /**
+     * $idAppacmanLang is the current request's already-resolved language
+     * (Api\Model\SerieLang::idForCulture(Config::getLanguage())) - a LEFT
+     * JOIN, not INNER, so a series still shows up even if that language's
+     * translation hasn't been synced yet (name/overview just come back null)
+     */
+    public function listForUser(int $idUser, int $idAppacmanLang): array
     {
         $sql    = '
-            SELECT s.*
+            SELECT s.*, sl.name, sl.overview
             FROM user_watchlist w
             INNER JOIN serie s ON s.id_serie = w.id_serie
+            LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
             WHERE w.id_user = :id_user
             ORDER BY w.created DESC
         ';
         $params = array(
-            'id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
         );
         return $this->mysql->query($sql, $params);
     }

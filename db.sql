@@ -449,10 +449,16 @@ DROP TABLE IF EXISTS `serie`;
 CREATE TABLE `serie` (
   `id_serie` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `tvdb_id` int(10) unsigned NOT NULL,
-  `name` varchar(255) NOT NULL,
-  `overview` text,
+  -- name/overview live only in serie_lang (translated per language) - not
+  -- duplicated here, even for a "default" language
   `image` varchar(500) DEFAULT NULL,
-  `year` varchar(4) DEFAULT NULL,
+  -- both derived from TheTVDB's firstAired/lastAired (full dates - only the
+  -- year is kept); replaces the old single `year` column, which was just
+  -- firstAired's year and became redundant once year_start existed.
+  -- year_end is nullable: an ongoing/"Continuing" show still gets one (the
+  -- latest aired episode's year), not a real end date - check `status`
+  `year_start` varchar(4) DEFAULT NULL,
+  `year_end` varchar(4) DEFAULT NULL,
   `status` varchar(50) DEFAULT NULL,
   `slug` varchar(255) DEFAULT NULL,
   `average_runtime` smallint(5) unsigned DEFAULT NULL,

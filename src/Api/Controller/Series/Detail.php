@@ -49,10 +49,16 @@ class Detail extends Controller
         }
         unset($episode);
 
-        $translations = (new SerieLang())->syncForSerie($info['id_serie'], $tvdbId, $this->client);
+        // Config::getLanguage() is already resolved per-request (Accept-
+        // Language header for this sub-project, since 'api' isn't {lang}-
+        // prefixed - see Core\Utils\Language::initLanguage()) - only that
+        // one language's translation is fetched/returned, not every
+        // language this app supports
+        $translation = (new SerieLang())->syncForLanguage($info['id_serie'], $tvdbId, $this->config->getLanguage(), $this->client);
+        $info['name']     = $translation['name'];
+        $info['overview'] = $translation['overview'];
 
         $this->assign('series', $info);
-        $this->assign('translations', $translations);
         $this->assign('episodes', $episodeRows);
         $this->assign('in_watchlist', (new Watchlist())->has($this->user->getID(), $info['id_serie']));
     }

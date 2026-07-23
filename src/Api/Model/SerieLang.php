@@ -14,67 +14,70 @@ class SerieLang extends Model
     /**
      * id_appacman_lang (this project's existing language lookup table,
      * config/projects.php's api sub-project languages - 1=ca, 2=es, 3=en)
-     * -> [culture (the key used in the API response), tvdb (TheTVDB's own
-     * 3-letter language code for GET /series/{id}/translations/{language})]
+     * -> TheTVDB's own 3-letter language code, for GET /series/{id}/
+     * translations/{language}
      */
-    private const array LANGUAGES = array(
-        1 => array('culture' => 'ca', 'tvdb' => 'cat'),
-        2 => array('culture' => 'es', 'tvdb' => 'spa'),
-        3 => array('culture' => 'en', 'tvdb' => 'eng'),
+    private const array TVDB_LANGUAGE = array(
+        1 => 'cat',
+        2 => 'spa',
+        3 => 'eng',
+    );
+
+    private const array CULTURE_TO_ID = array(
+        'ca' => 1,
+        'es' => 2,
+        'en' => 3,
     );
 
     /**
-     * fetches/refreshes whichever of this project's languages are missing
-     * or stale, then returns every language's translation keyed by culture
-     * (ca/es/en) - a language with no TheTVDB translation available comes
-     * back as ['name' => null, 'overview' => null], not simply absent
+     * id_appacman_lang for a culture code (e.g. Core\Utils\Config::getLanguage(),
+     * already resolved per-request from Accept-Language/session/URL - see
+     * Core\Utils\Language::initLanguage()), or null for an unsupported one
      */
-    public function syncForSerie(int $idSerie, int $tvdbSerieId, Client $client): array
+    public static function idForCulture(string $culture): ?int
     {
-        $existing = $this->allForSerie($idSerie); // keyed by id_appacman_lang
-
-        foreach (self::LANGUAGES as $idAppacmanLang => $language) {
-            $row = $existing[$idAppacmanLang] ?? null;
-            if ($row !== null && !$this->isStale($row['synced_at'])) {
-                continue;
-            }
-
-            $translation = $client->getSeriesTranslation($tvdbSerieId, $language['tvdb']);
-            $this->upsert($idSerie, $idAppacmanLang, $translation);
-        }
-
-        $rows      = $this->allForSerie($idSerie);
-        $byCulture = array();
-        foreach (self::LANGUAGES as $idAppacmanLang => $language) {
-            $row                            = $rows[$idAppacmanLang] ?? null;
-            $byCulture[$language['culture']] = array(
-                'name'     => $row['name'] ?? null,
-                'overview' => $row['overview'] ?? null,
-            );
-        }
-        return $byCulture;
+        return self::CULTURE_TO_ID[$culture] ?? null;
     }
 
     /**
-     * @return array<int, array> existing rows keyed by id_appacman_lang
+     * fetches/refreshes just the requested language's translation if it's
+     * missing or stale, then returns it - deliberately not all of this
+     * app's languages at once, since a given request only ever needs its
+     * own resolved one. Returns ['name' => null, 'overview' => null] both
+     * for "TheTVDB has no translation in this language" and for an
+     * unsupported $culture, rather than distinguishing the two - the caller
+     * doesn't need to
      */
-    private function allForSerie(int $idSerie): array
+    public function syncForLanguage(int $idSerie, int $tvdbSerieId, string $culture, Client $client): array
+    {
+        $idAppacmanLang = self::idForCulture($culture);
+        if ($idAppacmanLang === null) {
+            return array('name' => null, 'overview' => null);
+        }
+
+        $row = $this->find($idSerie, $idAppacmanLang);
+        if ($row === null || $this->isStale($row['synced_at'])) {
+            $translation = $client->getSeriesTranslation($tvdbSerieId, self::TVDB_LANGUAGE[$idAppacmanLang]);
+            $this->upsert($idSerie, $idAppacmanLang, $translation);
+            $row = $this->find($idSerie, $idAppacmanLang);
+        }
+
+        return array('name' => $row['name'] ?? null, 'overview' => $row['overview'] ?? null);
+    }
+
+    private function find(int $idSerie, int $idAppacmanLang): ?array
     {
         $sql    = '
             SELECT *
             FROM serie_lang
-            WHERE id_serie = :id_serie
+            WHERE id_serie = :id_serie AND id_appacman_lang = :id_appacman_lang
         ';
         $params = array(
-            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'id_serie'         => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
         );
         $rows   = $this->mysql->query($sql, $params);
-
-        $keyed = array();
-        foreach ($rows as $row) {
-            $keyed[$row['id_appacman_lang']] = $row;
-        }
-        return $keyed;
+        return $rows[0] ?? null;
     }
 
     private function isStale(string $syncedAt): bool

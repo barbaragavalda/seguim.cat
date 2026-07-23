@@ -88,18 +88,21 @@ class Series extends Model
 
     private function upsert(int $tvdbId, array $data): void
     {
-        $sql      = '
-            INSERT INTO serie (tvdb_id, name, overview, image, year, status, slug, average_runtime, synced_at)
-            VALUES (:tvdb_id, :name, :overview, :image, :year, :status, :slug, :average_runtime, NOW())
+        $sql   = '
+            INSERT INTO serie (tvdb_id, image, year_start, year_end, status, slug, average_runtime, synced_at)
+            VALUES (:tvdb_id, :image, :year_start, :year_end, :status, :slug, :average_runtime, NOW())
             ON DUPLICATE KEY UPDATE
-                name = :name_upd, overview = :overview_upd, image = :image_upd,
-                year = :year_upd, status = :status_upd, slug = :slug_upd,
+                image = :image_upd, year_start = :year_start_upd, year_end = :year_end_upd,
+                status = :status_upd, slug = :slug_upd,
                 average_runtime = :average_runtime_upd, synced_at = NOW()
         ';
-        $name     = $data['name'] ?? '';
-        $overview = $data['overview'] ?? null;
-        $image    = $data['image'] ?? null;
-        $year     = $data['year'] ?? null;
+        $image = $data['image'] ?? null;
+        // firstAired/lastAired are full dates ("2004-09-22") - only the
+        // year is stored, matching what was asked for; year_end reflects
+        // the latest aired episode's year for an ongoing/"Continuing"
+        // show, not necessarily a real end date
+        $yearStart = !empty($data['firstAired']) ? substr($data['firstAired'], 0, 4) : null;
+        $yearEnd   = !empty($data['lastAired']) ? substr($data['lastAired'], 0, 4) : null;
         // SeriesBaseRecord's status is an object ({id, name, recordType,
         // keepUpdated}), not a plain string like on a /search SearchResult
         $status         = $data['status']['name'] ?? null;
@@ -108,14 +111,12 @@ class Series extends Model
 
         $params = array(
             'tvdb_id'             => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),
-            'name'                => array('value' => $name, 'type' => PDO::PARAM_STR),
-            'name_upd'            => array('value' => $name, 'type' => PDO::PARAM_STR),
-            'overview'            => array('value' => $overview, 'type' => PDO::PARAM_STR),
-            'overview_upd'        => array('value' => $overview, 'type' => PDO::PARAM_STR),
             'image'               => array('value' => $image, 'type' => PDO::PARAM_STR),
             'image_upd'           => array('value' => $image, 'type' => PDO::PARAM_STR),
-            'year'                => array('value' => $year, 'type' => PDO::PARAM_STR),
-            'year_upd'            => array('value' => $year, 'type' => PDO::PARAM_STR),
+            'year_start'          => array('value' => $yearStart, 'type' => PDO::PARAM_STR),
+            'year_start_upd'      => array('value' => $yearStart, 'type' => PDO::PARAM_STR),
+            'year_end'            => array('value' => $yearEnd, 'type' => PDO::PARAM_STR),
+            'year_end_upd'        => array('value' => $yearEnd, 'type' => PDO::PARAM_STR),
             'status'              => array('value' => $status, 'type' => PDO::PARAM_STR),
             'status_upd'          => array('value' => $status, 'type' => PDO::PARAM_STR),
             'slug'                => array('value' => $slug, 'type' => PDO::PARAM_STR),
