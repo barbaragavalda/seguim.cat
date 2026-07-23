@@ -413,6 +413,11 @@ CREATE TABLE `user` (
   `email_bidx` char(64) NOT NULL,
   `password` varchar(255) NOT NULL,
   `username` varchar(20) NOT NULL,
+  -- captured at registration (Webservice\Controller\Register, via
+  -- Core\Utils\Language::getLanguageID()) so a later notification (e.g.
+  -- ForgotPassword's reset email) is sent in the language this user
+  -- actually registered with, not whatever a later request resolves to
+  `id_appacman_lang` tinyint(3) unsigned DEFAULT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user`) USING BTREE,
   UNIQUE KEY `email_bidx` (`email_bidx`),
