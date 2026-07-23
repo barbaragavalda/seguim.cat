@@ -94,13 +94,19 @@ class Series extends Model
     private function upsert(int $tvdbId, array $data): void
     {
         $sql   = '
-            INSERT INTO serie (tvdb_id, image, background, year_start, year_end, status, slug, average_runtime, synced_at)
-            VALUES (:tvdb_id, :image, :background, :year_start, :year_end, :status, :slug, :average_runtime, NOW())
+            INSERT INTO serie (tvdb_id, default_name, default_overview, image, background, year_start, year_end, status, slug, average_runtime, synced_at)
+            VALUES (:tvdb_id, :default_name, :default_overview, :image, :background, :year_start, :year_end, :status, :slug, :average_runtime, NOW())
             ON DUPLICATE KEY UPDATE
+                default_name = :default_name_upd, default_overview = :default_overview_upd,
                 image = :image_upd, background = :background_upd, year_start = :year_start_upd, year_end = :year_end_upd,
                 status = :status_upd, slug = :slug_upd,
                 average_runtime = :average_runtime_upd, synced_at = NOW()
         ';
+        // TheTVDB's own base record name/overview - normally the show's
+        // original-language text, used as a fallback when serie_lang has no
+        // translation for the app's current language (see Detail controller)
+        $defaultName     = $data['name'] ?? null;
+        $defaultOverview = $data['overview'] ?? null;
         $image      = $data['image'] ?? null;
         $background = $data['background'] ?? null;
         // firstAired/lastAired are full dates ("2004-09-22") - only the
@@ -116,7 +122,11 @@ class Series extends Model
         $averageRuntime = $data['averageRuntime'] ?? null;
 
         $params = array(
-            'tvdb_id'             => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),
+            'tvdb_id'                 => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),
+            'default_name'            => array('value' => $defaultName, 'type' => PDO::PARAM_STR),
+            'default_name_upd'        => array('value' => $defaultName, 'type' => PDO::PARAM_STR),
+            'default_overview'        => array('value' => $defaultOverview, 'type' => PDO::PARAM_STR),
+            'default_overview_upd'    => array('value' => $defaultOverview, 'type' => PDO::PARAM_STR),
             'image'               => array('value' => $image, 'type' => PDO::PARAM_STR),
             'image_upd'           => array('value' => $image, 'type' => PDO::PARAM_STR),
             'background'          => array('value' => $background, 'type' => PDO::PARAM_STR),

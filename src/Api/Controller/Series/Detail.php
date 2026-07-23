@@ -63,9 +63,13 @@ class Detail extends Controller
         // language this app supports
         $culture = $this->config->getLanguage();
 
+        // fall back to TheTVDB's own base record (default_name/
+        // default_overview, normally the show's original-language text)
+        // when the app's current language has no translation, rather than
+        // showing a blank title/overview
         $translation      = (new SerieLang())->syncForLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
-        $info['name']     = $translation['name'];
-        $info['overview'] = $translation['overview'];
+        $info['name']     = $translation['name'] ?: $info['default_name'];
+        $info['overview'] = $translation['overview'] ?: $info['default_overview'];
 
         $episodeTranslations = (new EpisodeLang())->syncForSerieAndLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
         foreach ($episodeRows as &$episode) {

@@ -454,8 +454,12 @@ DROP TABLE IF EXISTS `serie`;
 CREATE TABLE `serie` (
   `id_serie` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `tvdb_id` int(10) unsigned NOT NULL,
-  -- name/overview live only in serie_lang (translated per language) - not
-  -- duplicated here, even for a "default" language
+  -- per-language translated name/overview live in serie_lang, not here.
+  -- default_name/default_overview below are TheTVDB's own (untranslated,
+  -- normally original-language) base record fields, used as a fallback
+  -- when serie_lang has no translation for the app's current language
+  `default_name` varchar(255) DEFAULT NULL,
+  `default_overview` text DEFAULT NULL,
   `image` varchar(500) DEFAULT NULL,
   -- fanart/backdrop (TheTVDB artwork type 3, "Background"), from the
   -- highest-scored of the (typically dozens of) results on the separate

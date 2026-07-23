@@ -53,7 +53,8 @@ class Watchlist extends Model
      * $idAppacmanLang is the current request's already-resolved language
      * (Api\Model\TheTvdb\Languages::idForCulture(Config::getLanguage())) - a
      * LEFT JOIN, not INNER, so a series still shows up even if that language's
-     * translation hasn't been synced yet (name/overview just come back null)
+     * translation hasn't been synced yet (sl.name/sl.overview just come back
+     * null, same as Series/Detail's fallback: sl.name ?: s.default_name)
      */
     public function listForUser(int $idUser, int $idAppacmanLang): array
     {
@@ -69,7 +70,15 @@ class Watchlist extends Model
             'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
             'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
         );
-        return $this->mysql->query($sql, $params);
+        $rows   = $this->mysql->query($sql, $params);
+
+        foreach ($rows as &$row) {
+            $row['name']     = $row['name'] ?: $row['default_name'];
+            $row['overview'] = $row['overview'] ?: $row['default_overview'];
+        }
+        unset($row);
+
+        return $rows;
     }
 
 }
