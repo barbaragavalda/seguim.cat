@@ -32,4 +32,10 @@ final class Languages
         return self::ALL[$idAppacmanLang]['tvdb'] ?? null;
     }
 
+    public static function tvdbCodeForCulture(string $culture): ?string
+    {
+        $id = self::idForCulture($culture);
+        return $id !== null ? self::tvdbCode($id) : null;
+    }
+
 }

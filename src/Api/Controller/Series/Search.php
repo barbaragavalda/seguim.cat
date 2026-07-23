@@ -4,6 +4,7 @@ namespace Api\Controller\Series;
 
 use Api\Controller\Controller;
 use Api\Model\TheTvdb\Client;
+use Api\Model\TheTvdb\Languages;
 use Core\Controller\CacheManager;
 use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
@@ -31,7 +32,12 @@ class Search extends Controller
         }
         $page = max(0, (int) ($_GET['page'] ?? 0));
 
-        $result = $this->client->search($query, $page);
+        // falls back to English (TheTVDB's own most-complete language) for
+        // an unresolved/unsupported culture, rather than leaving name/
+        // overview unset
+        $tvdbLanguageCode = Languages::tvdbCodeForCulture($this->config->getLanguage()) ?? 'eng';
+
+        $result = $this->client->search($query, $page, $tvdbLanguageCode);
         $this->assign('results', $result['results']);
         $this->assign('hasMore', $result['hasMore']);
     }

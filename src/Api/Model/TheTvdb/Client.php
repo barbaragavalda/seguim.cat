@@ -25,15 +25,31 @@ class Client
         $this->tokenCacheFile = $this->tokenCacheDir . 'token.json';
     }
 
-    public function search(string $query, int $page = 0): array
+    /**
+     * $tvdbLanguageCode picks each result's name/overview out of its own
+     * inline `translations`/`overviews` maps (TheTVDB's search index already
+     * returns every language it has for a result, confirmed empirically -
+     * no separate per-result translation call needed here, unlike series/
+     * episode detail) - falls back to the result's own primary-language
+     * name/overview if that specific language isn't in the map
+     */
+    public function search(string $query, int $page, string $tvdbLanguageCode): array
     {
         $response = $this->request(
             'GET',
             '/search',
             array('query' => $query, 'type' => 'series', 'page' => $page)
         );
+        $results = $response['data'] ?? array();
+
+        foreach ($results as &$result) {
+            $result['name']     = $result['translations'][$tvdbLanguageCode] ?? $result['name'] ?? null;
+            $result['overview'] = $result['overviews'][$tvdbLanguageCode] ?? $result['overview'] ?? null;
+        }
+        unset($result);
+
         return array(
-            'results' => $response['data'] ?? array(),
+            'results' => $results,
             'hasMore' => ($response['links']['next'] ?? null) !== null,
         );
     }
