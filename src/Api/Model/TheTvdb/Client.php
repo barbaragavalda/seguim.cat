@@ -59,11 +59,28 @@ class Client
     }
 
     /**
+     * unlike getSeriesTranslation() (one series-level record), this returns
+     * *every* episode of the series translated into $tvdbLanguageCode in a
+     * single call - confirmed empirically (149 episodes back for a 149-
+     * episode series, same as the untranslated getSeriesEpisodes() call),
+     * so no need to fetch translations per-episode
+     */
+    public function getSeriesEpisodesTranslated(int $tvdbSeriesId, string $tvdbLanguageCode, string $seasonType = 'official'): array
+    {
+        $response = $this->request(
+            'GET',
+            '/series/' . $tvdbSeriesId . '/episodes/' . $seasonType . '/' . $tvdbLanguageCode,
+            array('page' => 0)
+        );
+        return $response['data']['episodes'] ?? array();
+    }
+
+    /**
      * $tvdbLanguageCode is TheTVDB's own 3-letter code (e.g. "cat"/"spa"/
-     * "eng"), not this app's 2-letter one - see Api\Model\SerieLang for that
-     * mapping. Returns null (not an error/exception) when TheTVDB has no
-     * translation in that language - a normal, expected 404 for most shows
-     * in most languages, not a failure worth retrying or logging
+     * "eng"), not this app's 2-letter one - see Api\Model\TheTvdb\Languages
+     * for that mapping. Returns null (not an error/exception) when TheTVDB
+     * has no translation in that language - a normal, expected 404 for most
+     * shows in most languages, not a failure worth retrying or logging
      */
     public function getSeriesTranslation(int $tvdbSeriesId, string $tvdbLanguageCode): ?array
     {

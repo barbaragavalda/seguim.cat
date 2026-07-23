@@ -79,21 +79,18 @@ class Episode extends Model
     {
         $sql           = '
             INSERT INTO episode (
-                id_serie, tvdb_id, season_number, episode_number, name, overview, aired, image, runtime, synced_at
+                id_serie, tvdb_id, season_number, episode_number, aired, image, runtime, synced_at
             )
             VALUES (
-                :id_serie, :tvdb_id, :season_number, :episode_number, :name, :overview, :aired, :image, :runtime, NOW()
+                :id_serie, :tvdb_id, :season_number, :episode_number, :aired, :image, :runtime, NOW()
             )
             ON DUPLICATE KEY UPDATE
                 season_number = :season_number_upd, episode_number = :episode_number_upd,
-                name = :name_upd, overview = :overview_upd, aired = :aired_upd,
-                image = :image_upd, runtime = :runtime_upd, synced_at = NOW()
+                aired = :aired_upd, image = :image_upd, runtime = :runtime_upd, synced_at = NOW()
         ';
         $tvdbId        = $data['id'] ?? 0;
         $seasonNumber  = $data['seasonNumber'] ?? 0;
         $episodeNumber = $data['number'] ?? 0;
-        $name          = $data['name'] ?? null;
-        $overview      = $data['overview'] ?? null;
         $aired         = !empty($data['aired']) ? $data['aired'] : null;
         $image         = $data['image'] ?? null;
         $runtime       = $data['runtime'] ?? null;
@@ -105,10 +102,6 @@ class Episode extends Model
             'season_number_upd'  => array('value' => $seasonNumber, 'type' => PDO::PARAM_INT),
             'episode_number'     => array('value' => $episodeNumber, 'type' => PDO::PARAM_INT),
             'episode_number_upd' => array('value' => $episodeNumber, 'type' => PDO::PARAM_INT),
-            'name'               => array('value' => $name, 'type' => PDO::PARAM_STR),
-            'name_upd'           => array('value' => $name, 'type' => PDO::PARAM_STR),
-            'overview'           => array('value' => $overview, 'type' => PDO::PARAM_STR),
-            'overview_upd'       => array('value' => $overview, 'type' => PDO::PARAM_STR),
             'aired'              => array('value' => $aired, 'type' => PDO::PARAM_STR),
             'aired_upd'          => array('value' => $aired, 'type' => PDO::PARAM_STR),
             'image'              => array('value' => $image, 'type' => PDO::PARAM_STR),

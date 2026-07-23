@@ -19,7 +19,11 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     whether or not it's registered, emails a 6-digit code valid 15 min if it is),
     `POST /api/password/reset` (`email`, `code`, `password` — max 5 wrong attempts before the code
     is locked out; also revokes every device token, so a compromised account gets logged out
-    everywhere on reset).
+    everywhere on reset). The reset code email is sent in **the language the user registered
+    with** (`user.id_appacman_lang`, captured once at `register` time), not whatever
+    `Accept-Language` the `password/forgot` request itself happens to carry — a password-reset
+    request is often made from an unfamiliar device, so the current request's own language can't
+    be trusted to match the account's.
   - TV series tracking (this project's own code, `src/Api/{Controller,Model}/`):
 
     | Method | Path                        | Purpose                                              |
@@ -37,9 +41,21 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     (returned by `register`/`login`) on everything else.
 
     Series/episode metadata is **lazily mirrored**: TheTVDB is only called (and the result cached
-    into the local `series`/`episode` tables, refreshed after 24h) the first time a user actually
+    into the local `serie`/`episode` tables, refreshed after 24h) the first time a user actually
     searches for or opens a given series — there's no full-catalog background sync. Scoped to TV
-    series only for now; no movies, ratings, or "mark whole season watched" yet.
+    series only for now; no movies, ratings, or "mark whole season watched" yet. `serie`'s own
+    `name`/`overview` are translated per language into `serie_lang` (ca/es/en, via TheTVDB's
+    `GET /series/{id}/translations/{language}`) rather than duplicated on `serie` itself — the
+    `api` sub-project's `Config::getLanguage()` (`Accept-Language`-resolved, see below) picks which
+    one a given response actually returns.
+
+  - **Language resolution**: the `api` sub-project isn't `{lang}`-prefixed like the public site, so
+    its language comes from `Accept-Language` (falling back to session, then the project's default
+    `ca` — see `Core\Utils\Language::initLanguage()`). This resolves *per request*, which is right
+    for browsing endpoints but wrong for anything sent later out-of-band (a password-reset request
+    is often made from a different device than the one that registered) — see `password/forgot`
+    above for how that case uses the *stored* `user.id_appacman_lang` instead
+    (`Core\Utils\Language::withCulture()`).
 
 ## Setup
 
@@ -59,8 +75,8 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
      deliver reset codes (in dev, if this isn't set up yet, the code is logged via `error_log()`
      instead of failing the request - see `Webservice\Controller\ForgotPassword`)
 3. Create the database and import `db.sql` (Appacman's minimal schema + this project's own
-   `user`/`user_token`/`series`/`episode`/`user_watchlist`/`user_episode_watched` tables — no admin
-   user seeded, see below).
+   `user`/`user_token`/`password_reset`/`serie`/`serie_lang`/`episode`/`user_watchlist`/
+   `user_episode_watched` tables — no admin user seeded, see below).
 4. Set up the local vhost pointing `DocumentRoot` to `web/`.
 
 ## First admin user
@@ -105,7 +121,7 @@ assign (usually `1` for the first user).
 - `web/` - served document root (front controllers, `.htaccess`, `static/`, `upload/`)
 - `src/Web/` - public site controllers/views (placeholder, not the real product)
 - `src/Api/` - the tracking backend: `Controller/{Series,Watchlist,Episode}/` (routes),
-  `Model/{Series,Episode,Watchlist,WatchedEpisode}.php` (local mirror + user state),
+  `Model/{Series,SerieLang,Episode,Watchlist,WatchedEpisode}.php` (local mirror + user state),
   `Model/TheTvdb/Client.php` (TheTVDB v4 HTTP client - does its own plain `curl_init()` call
   rather than `Core\Model\Utils\Curl`, which forces every request through a bogus local proxy in
   dev mode and breaks real third-party calls)

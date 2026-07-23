@@ -4,6 +4,7 @@ namespace Api\Controller\Series;
 
 use Api\Controller\Controller;
 use Api\Model\Episode;
+use Api\Model\EpisodeLang;
 use Api\Model\Series as SeriesModel;
 use Api\Model\SerieLang;
 use Api\Model\TheTvdb\Client;
@@ -54,24 +55,26 @@ class Detail extends Controller
         $watchedIds = $this->user !== null
             ? (new WatchedEpisode())->watchedEpisodeIds($this->user->getID(), $info['id_serie'])
             : [];
-        foreach ($episodeRows as &$episode) {
-            $episode['watched'] = in_array($episode['id_episode'], $watchedIds, true);
-        }
-        unset($episode);
 
         // Config::getLanguage() is already resolved per-request (Accept-
         // Language header for this sub-project, since 'api' isn't {lang}-
         // prefixed - see Core\Utils\Language::initLanguage()) - only that
         // one language's translation is fetched/returned, not every
         // language this app supports
-        $translation      = (new SerieLang())->syncForLanguage(
-            $info['id_serie'],
-            $tvdbId,
-            $this->config->getLanguage(),
-            $this->client
-        );
+        $culture = $this->config->getLanguage();
+
+        $translation      = (new SerieLang())->syncForLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
         $info['name']     = $translation['name'];
         $info['overview'] = $translation['overview'];
+
+        $episodeTranslations = (new EpisodeLang())->syncForSerieAndLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
+        foreach ($episodeRows as &$episode) {
+            $episode['watched']  = in_array($episode['id_episode'], $watchedIds, true);
+            $episodeTranslation  = $episodeTranslations[$episode['id_episode']] ?? array('name' => null, 'overview' => null);
+            $episode['name']     = $episodeTranslation['name'];
+            $episode['overview'] = $episodeTranslation['overview'];
+        }
+        unset($episode);
 
         $this->assign('series', $info);
         $this->assign('episodes', $episodeRows);

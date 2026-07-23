@@ -51,8 +51,8 @@ class Watchlist extends Model
 
     /**
      * $idAppacmanLang is the current request's already-resolved language
-     * (Api\Model\SerieLang::idForCulture(Config::getLanguage())) - a LEFT
-     * JOIN, not INNER, so a series still shows up even if that language's
+     * (Api\Model\TheTvdb\Languages::idForCulture(Config::getLanguage())) - a
+     * LEFT JOIN, not INNER, so a series still shows up even if that language's
      * translation hasn't been synced yet (name/overview just come back null)
      */
     public function listForUser(int $idUser, int $idAppacmanLang): array

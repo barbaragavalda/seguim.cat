@@ -521,8 +521,8 @@ CREATE TABLE `episode` (
   `tvdb_id` int(10) unsigned NOT NULL,
   `season_number` smallint(5) unsigned NOT NULL DEFAULT 0,
   `episode_number` smallint(5) unsigned NOT NULL DEFAULT 0,
-  `name` varchar(255) DEFAULT NULL,
-  `overview` text,
+  -- name/overview live only in episode_lang (translated per language) - not
+  -- duplicated here, same reasoning as serie/serie_lang
   `aired` date DEFAULT NULL,
   `image` varchar(500) DEFAULT NULL,
   `runtime` smallint(5) unsigned DEFAULT NULL,
@@ -530,6 +530,29 @@ CREATE TABLE `episode` (
   PRIMARY KEY (`id_episode`) USING BTREE,
   UNIQUE KEY `tvdb_id` (`tvdb_id`),
   KEY `id_serie` (`id_serie`, `season_number`, `episode_number`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for episode_lang (translated name/overview, lazily synced
+-- in bulk - one TheTVDB call per series+language returns every episode's
+-- translation at once, see Api\Model\TheTvdb\Client::getSeriesEpisodesTranslated()
+-- and Api\Model\EpisodeLang - not one call per episode)
+-- ----------------------------
+DROP TABLE IF EXISTS `episode_lang`;
+CREATE TABLE `episode_lang` (
+  `id_episode_lang` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_episode` mediumint(8) unsigned NOT NULL,
+  `id_appacman_lang` tinyint(3) unsigned NOT NULL,
+  -- both nullable: a NULL row (not a missing row) means TheTVDB was asked
+  -- and confirmed it has no translation for this specific episode in this
+  -- language (common - confirmed empirically only ~95% of a real series'
+  -- episodes had a Spanish name), same "cache the absence" reasoning as
+  -- serie_lang
+  `name` varchar(255) DEFAULT NULL,
+  `overview` text,
+  `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_episode_lang`) USING BTREE,
+  UNIQUE KEY `id_episode_lang_lookup` (`id_episode`, `id_appacman_lang`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------

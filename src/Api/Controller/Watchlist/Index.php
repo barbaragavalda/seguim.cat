@@ -3,7 +3,7 @@
 namespace Api\Controller\Watchlist;
 
 use Api\Controller\Controller;
-use Api\Model\SerieLang;
+use Api\Model\TheTvdb\Languages;
 use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
 
@@ -16,7 +16,7 @@ class Index extends Controller
         // falls back to 0 (matches nothing) for an unsupported/unresolved
         // culture rather than guessing a default - listForUser()'s LEFT
         // JOIN just returns null name/overview in that case
-        $idAppacmanLang = SerieLang::idForCulture($this->config->getLanguage()) ?? 0;
+        $idAppacmanLang = Languages::idForCulture($this->config->getLanguage()) ?? 0;
         $this->assign('watchlist', (new Watchlist())->listForUser($this->user->getID(), $idAppacmanLang));
     }
 

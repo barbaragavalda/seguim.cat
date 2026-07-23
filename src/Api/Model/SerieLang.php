@@ -3,6 +3,7 @@
 namespace Api\Model;
 
 use Api\Model\TheTvdb\Client;
+use Api\Model\TheTvdb\Languages;
 use Core\Model\Model;
 use PDO;
 
@@ -10,34 +11,6 @@ class SerieLang extends Model
 {
 
     private const int TTL_SECONDS = 86400; // 24h
-
-    /**
-     * id_appacman_lang (this project's existing language lookup table,
-     * config/projects.php's api sub-project languages - 1=ca, 2=es, 3=en)
-     * -> TheTVDB's own 3-letter language code, for GET /series/{id}/
-     * translations/{language}
-     */
-    private const array TVDB_LANGUAGE = array(
-        1 => 'cat',
-        2 => 'spa',
-        3 => 'eng',
-    );
-
-    private const array CULTURE_TO_ID = array(
-        'ca' => 1,
-        'es' => 2,
-        'en' => 3,
-    );
-
-    /**
-     * id_appacman_lang for a culture code (e.g. Core\Utils\Config::getLanguage(),
-     * already resolved per-request from Accept-Language/session/URL - see
-     * Core\Utils\Language::initLanguage()), or null for an unsupported one
-     */
-    public static function idForCulture(string $culture): ?int
-    {
-        return self::CULTURE_TO_ID[$culture] ?? null;
-    }
 
     /**
      * fetches/refreshes just the requested language's translation if it's
@@ -50,14 +23,14 @@ class SerieLang extends Model
      */
     public function syncForLanguage(int $idSerie, int $tvdbSerieId, string $culture, Client $client): array
     {
-        $idAppacmanLang = self::idForCulture($culture);
+        $idAppacmanLang = Languages::idForCulture($culture);
         if ($idAppacmanLang === null) {
             return array('name' => null, 'overview' => null);
         }
 
         $row = $this->find($idSerie, $idAppacmanLang);
         if ($row === null || $this->isStale($row['synced_at'])) {
-            $translation = $client->getSeriesTranslation($tvdbSerieId, self::TVDB_LANGUAGE[$idAppacmanLang]);
+            $translation = $client->getSeriesTranslation($tvdbSerieId, Languages::tvdbCode($idAppacmanLang));
             $this->upsert($idSerie, $idAppacmanLang, $translation);
             $row = $this->find($idSerie, $idAppacmanLang);
         }
