@@ -71,12 +71,14 @@ class Detail extends Controller
         $info['name']     = $translation['name'] ?: $info['default_name'];
         $info['overview'] = $translation['overview'] ?: $info['default_overview'];
 
+        // same default_name/default_overview fallback as the series itself
+        // above, per episode
         $episodeTranslations = (new EpisodeLang())->syncForSerieAndLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
         foreach ($episodeRows as &$episode) {
             $episode['watched']  = in_array($episode['id_episode'], $watchedIds, true);
             $episodeTranslation  = $episodeTranslations[$episode['id_episode']] ?? array('name' => null, 'overview' => null);
-            $episode['name']     = $episodeTranslation['name'];
-            $episode['overview'] = $episodeTranslation['overview'];
+            $episode['name']     = $episodeTranslation['name'] ?: $episode['default_name'];
+            $episode['overview'] = $episodeTranslation['overview'] ?: $episode['default_overview'];
         }
         unset($episode);
 

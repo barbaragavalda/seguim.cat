@@ -77,37 +77,46 @@ class Episode extends Model
 
     private function upsert(int $idSerie, array $data): void
     {
-        $sql           = '
+        $sql             = '
             INSERT INTO episode (
-                id_serie, tvdb_id, season_number, episode_number, aired, image, runtime, synced_at
+                id_serie, tvdb_id, season_number, episode_number, default_name, default_overview, aired, image, runtime, synced_at
             )
             VALUES (
-                :id_serie, :tvdb_id, :season_number, :episode_number, :aired, :image, :runtime, NOW()
+                :id_serie, :tvdb_id, :season_number, :episode_number, :default_name, :default_overview, :aired, :image, :runtime, NOW()
             )
             ON DUPLICATE KEY UPDATE
                 season_number = :season_number_upd, episode_number = :episode_number_upd,
+                default_name = :default_name_upd, default_overview = :default_overview_upd,
                 aired = :aired_upd, image = :image_upd, runtime = :runtime_upd, synced_at = NOW()
         ';
-        $tvdbId        = $data['id'] ?? 0;
-        $seasonNumber  = $data['seasonNumber'] ?? 0;
-        $episodeNumber = $data['number'] ?? 0;
-        $aired         = !empty($data['aired']) ? $data['aired'] : null;
-        $image         = $data['image'] ?? null;
-        $runtime       = $data['runtime'] ?? null;
+        $tvdbId          = $data['id'] ?? 0;
+        $seasonNumber    = $data['seasonNumber'] ?? 0;
+        $episodeNumber   = $data['number'] ?? 0;
+        // TheTVDB's own base record name/overview - fallback for when
+        // episode_lang has no translation for the app's current language
+        $defaultName     = $data['name'] ?? null;
+        $defaultOverview = $data['overview'] ?? null;
+        $aired           = !empty($data['aired']) ? $data['aired'] : null;
+        $image           = $data['image'] ?? null;
+        $runtime         = $data['runtime'] ?? null;
 
         $params = array(
-            'id_serie'           => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
-            'tvdb_id'            => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),
-            'season_number'      => array('value' => $seasonNumber, 'type' => PDO::PARAM_INT),
-            'season_number_upd'  => array('value' => $seasonNumber, 'type' => PDO::PARAM_INT),
-            'episode_number'     => array('value' => $episodeNumber, 'type' => PDO::PARAM_INT),
-            'episode_number_upd' => array('value' => $episodeNumber, 'type' => PDO::PARAM_INT),
-            'aired'              => array('value' => $aired, 'type' => PDO::PARAM_STR),
-            'aired_upd'          => array('value' => $aired, 'type' => PDO::PARAM_STR),
-            'image'              => array('value' => $image, 'type' => PDO::PARAM_STR),
-            'image_upd'          => array('value' => $image, 'type' => PDO::PARAM_STR),
-            'runtime'            => array('value' => $runtime, 'type' => PDO::PARAM_INT),
-            'runtime_upd'        => array('value' => $runtime, 'type' => PDO::PARAM_INT),
+            'id_serie'               => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'tvdb_id'                => array('value' => $tvdbId, 'type' => PDO::PARAM_INT),
+            'season_number'          => array('value' => $seasonNumber, 'type' => PDO::PARAM_INT),
+            'season_number_upd'      => array('value' => $seasonNumber, 'type' => PDO::PARAM_INT),
+            'episode_number'         => array('value' => $episodeNumber, 'type' => PDO::PARAM_INT),
+            'episode_number_upd'     => array('value' => $episodeNumber, 'type' => PDO::PARAM_INT),
+            'default_name'           => array('value' => $defaultName, 'type' => PDO::PARAM_STR),
+            'default_name_upd'       => array('value' => $defaultName, 'type' => PDO::PARAM_STR),
+            'default_overview'       => array('value' => $defaultOverview, 'type' => PDO::PARAM_STR),
+            'default_overview_upd'   => array('value' => $defaultOverview, 'type' => PDO::PARAM_STR),
+            'aired'                  => array('value' => $aired, 'type' => PDO::PARAM_STR),
+            'aired_upd'              => array('value' => $aired, 'type' => PDO::PARAM_STR),
+            'image'                  => array('value' => $image, 'type' => PDO::PARAM_STR),
+            'image_upd'              => array('value' => $image, 'type' => PDO::PARAM_STR),
+            'runtime'                => array('value' => $runtime, 'type' => PDO::PARAM_INT),
+            'runtime_upd'            => array('value' => $runtime, 'type' => PDO::PARAM_INT),
         );
         $this->mysql->query($sql, $params);
     }

@@ -525,8 +525,13 @@ CREATE TABLE `episode` (
   `tvdb_id` int(10) unsigned NOT NULL,
   `season_number` smallint(5) unsigned NOT NULL DEFAULT 0,
   `episode_number` smallint(5) unsigned NOT NULL DEFAULT 0,
-  -- name/overview live only in episode_lang (translated per language) - not
-  -- duplicated here, same reasoning as serie/serie_lang
+  -- per-language translated name/overview live in episode_lang, not here.
+  -- default_name/default_overview below are TheTVDB's own (untranslated,
+  -- normally original-language) base record fields, used as a fallback
+  -- when episode_lang has no translation for the app's current language -
+  -- same pattern as serie/serie_lang's default_name/default_overview
+  `default_name` varchar(255) DEFAULT NULL,
+  `default_overview` text DEFAULT NULL,
   `aired` date DEFAULT NULL,
   `image` varchar(500) DEFAULT NULL,
   `runtime` smallint(5) unsigned DEFAULT NULL,
