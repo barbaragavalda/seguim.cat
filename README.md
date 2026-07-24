@@ -36,6 +36,7 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     | GET    | `/api/series/{tvdbId}`      | Series detail + episode list (lazy-mirrors from TheTVDB) |
     | GET    | `/api/watchlist/watching`   | Series with ≥1 watched episode and something left to watch, most-recently-watched first (no pagination - see below) |
     | GET    | `/api/watchlist/not-started` | Series with 0 watched episodes, most-recently-added first (`?page=`, 0-based - response includes `hasMore`) |
+    | GET    | `/api/watchlist`            | All series, filtered by `?status=` (`removed`/`archived`/`watching`/`not_started`/`finished`) and optional `?search=` (title), paginated (`?page=`) - see below |
     | POST   | `/api/watchlist/{tvdbId}`   | Add a series to the watchlist                          |
     | DELETE | `/api/watchlist/{tvdbId}`   | Remove a series from the watchlist (hard delete - see below) |
     | POST   | `/api/watchlist/{tvdbId}/archived` | Archive a series (hidden from both lists, not deleted) |
@@ -90,6 +91,15 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     rows stay in the database (watched-episode history included), just hidden from both lists. This
     is deliberately different from `DELETE /watchlist/{tvdbId}`, which actually deletes the
     `user_watchlist` row.
+
+    `GET /watchlist` is a separate, unified "browse everything" view (for a profile-style screen),
+    distinct from the two opinionated home-screen lists above - every one of its 5 `?status=`
+    values is paginated (unlike `watching`), since `archived`/`removed`/`finished` alone can
+    accumulate hundreds of rows after a TV Time import. The 5 statuses partition every possible
+    combination of `archived`/`removed`/watched-vs-remaining exactly once, computed at the SQL
+    level (not filtered in PHP afterwards) so pagination stays correct per status; `removed` wins
+    over `archived` when a series is somehow flagged as both. `?search=` further filters by title
+    (a plain `LIKE`, no full-text index - this app's personal-tracker scale doesn't need one).
 
   - **TV Time importer** (`src/Api/Model/TvTimeImport/`, `src/Api/Controller/Import/`): lets a user
     upload the GDPR data export TV Time offered before shutting down, recovering their watchlist

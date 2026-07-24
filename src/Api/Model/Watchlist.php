@@ -216,6 +216,120 @@ class Watchlist extends Model
         return $this->finalizePage($rows, $idUser, $idAppacmanLang);
     }
 
+    private const array STATUSES = array('removed', 'archived', 'watching', 'not_started', 'finished');
+
+    /**
+     * unified, paginated "browse everything" view (for a profile-style
+     * screen) - unlike listWatching()/listNotStarted() above, every status
+     * here is paginated, since archived/removed/finished can easily
+     * accumulate hundreds of rows (a TV Time import commonly does). The 5
+     * statuses partition every possible (archived, removed, watched vs.
+     * remaining) combination exactly once - `removed` wins over `archived`
+     * when a series is somehow flagged as both (confirmed with the user:
+     * "removed" is the more definitive state). $search, when given,
+     * further filters by title (translated name, falling back to
+     * default_name same as everywhere else) - a simple `LIKE`, no
+     * full-text index, matching this app's personal-tracker scale
+     *
+     * @return array{results: array, hasMore: bool}
+     */
+    public function listByStatus(int $idUser, int $idAppacmanLang, string $status, int $page, ?string $search = null): array
+    {
+        if (!in_array($status, self::STATUSES, true)) {
+            throw new \InvalidArgumentException('Unknown watchlist status: ' . $status);
+        }
+
+        $hasRemaining = '
+            EXISTS (
+                SELECT 1
+                FROM episode er
+                LEFT JOIN user_episode_watched uewr ON uewr.id_episode = er.id_episode AND uewr.id_user = w.id_user
+                WHERE er.id_serie = s.id_serie
+                  AND er.season_number > 0
+                  AND er.aired IS NOT NULL AND er.aired <= CURDATE()
+                  AND uewr.id_episode IS NULL
+            )
+        ';
+        $hasWatched = '
+            EXISTS (
+                SELECT 1
+                FROM user_episode_watched uew2
+                INNER JOIN episode e2 ON e2.id_episode = uew2.id_episode
+                WHERE uew2.id_user = w.id_user AND e2.id_serie = s.id_serie
+            )
+        ';
+        $searchCondition = $search !== null && $search !== ''
+            ? ' AND COALESCE(sl.name, s.default_name) LIKE :search '
+            : '';
+
+        $sql = match ($status) {
+            'removed'  => '
+                SELECT s.*, sl.name, sl.overview
+                FROM user_watchlist w
+                INNER JOIN serie s ON s.id_serie = w.id_serie
+                LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+                WHERE w.id_user = :id_user AND w.removed = 1' . $searchCondition . '
+                ORDER BY w.created DESC
+                LIMIT :limit OFFSET :offset
+            ',
+            'archived' => '
+                SELECT s.*, sl.name, sl.overview
+                FROM user_watchlist w
+                INNER JOIN serie s ON s.id_serie = w.id_serie
+                LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 1' . $searchCondition . '
+                ORDER BY w.created DESC
+                LIMIT :limit OFFSET :offset
+            ',
+            'not_started' => '
+                SELECT s.*, sl.name, sl.overview
+                FROM user_watchlist w
+                INNER JOIN serie s ON s.id_serie = w.id_serie
+                LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0 AND NOT ' . $hasWatched . $searchCondition . '
+                ORDER BY w.created DESC
+                LIMIT :limit OFFSET :offset
+            ',
+            'watching' => '
+                SELECT s.*, sl.name, sl.overview
+                FROM user_watchlist w
+                INNER JOIN serie s ON s.id_serie = w.id_serie
+                LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
+                  AND ' . $hasWatched . ' AND ' . $hasRemaining . $searchCondition . '
+                ORDER BY (
+                    SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3
+                    INNER JOIN episode e3 ON e3.id_episode = uew3.id_episode
+                    WHERE uew3.id_user = w.id_user AND e3.id_serie = s.id_serie
+                ) DESC
+                LIMIT :limit OFFSET :offset
+            ',
+            'finished' => '
+                SELECT s.*, sl.name, sl.overview
+                FROM user_watchlist w
+                INNER JOIN serie s ON s.id_serie = w.id_serie
+                LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
+                  AND ' . $hasWatched . ' AND NOT ' . $hasRemaining . $searchCondition . '
+                ORDER BY (
+                    SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3
+                    INNER JOIN episode e3 ON e3.id_episode = uew3.id_episode
+                    WHERE uew3.id_user = w.id_user AND e3.id_serie = s.id_serie
+                ) DESC
+                LIMIT :limit OFFSET :offset
+            ',
+        };
+
+        $params = $this->pageParams($idUser, $idAppacmanLang, $page);
+        if ($searchCondition !== '') {
+            $params['search'] = array('value' => '%' . $search . '%', 'type' => PDO::PARAM_STR);
+        }
+
+        $rows = $this->mysql->query($sql, $params);
+
+        return $this->finalizePage($rows, $idUser, $idAppacmanLang);
+    }
+
     private function pageParams(int $idUser, int $idAppacmanLang, int $page): array
     {
         return array(
