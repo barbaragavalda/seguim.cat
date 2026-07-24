@@ -3,6 +3,7 @@
 namespace Api\Controller\Account;
 
 use Api\Controller\Controller;
+use Api\Model\TvTimeImport;
 use Api\Model\WatchedEpisode;
 use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
@@ -15,7 +16,8 @@ use Webservice\Model\UserToken;
  * collision, see Core\Bootstrap::loadRoutes()) because that vendor
  * controller only knows about the user/user_token schema it owns - it has
  * no idea this project also keeps its own per-user rows in user_watchlist/
- * user_episode_watched, which were otherwise left orphaned after a delete
+ * user_episode_watched/tvtime_import, which were otherwise left orphaned
+ * after a delete
  */
 #[Route('/account', methods: ['DELETE'], name: 'api.account.delete')]
 class Delete extends Controller
@@ -28,6 +30,7 @@ class Delete extends Controller
         (new UserToken())->revokeAllForUser($userID);
         (new Watchlist())->removeAllForUser($userID);
         (new WatchedEpisode())->removeAllForUser($userID);
+        (new TvTimeImport())->removeAllForUser($userID);
         (new User())->delete($userID);
     }
 

@@ -572,6 +572,12 @@ CREATE TABLE `user_watchlist` (
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_serie` mediumint(8) unsigned NOT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- both only ever set by the TVTime importer (see tvtime_import below):
+  -- archived = still followed in TVTime but marked archived there; removed =
+  -- has watch history but isn't in TVTime's followed list at all anymore
+  -- (unfollowed/deleted). Regular Watchlist::add() always leaves both at 0.
+  `archived` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `removed` tinyint(1) unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY (`id_user`, `id_serie`) USING BTREE,
   KEY `id_serie` (`id_serie`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -607,6 +613,36 @@ CREATE TABLE `password_reset` (
   `expires_at` timestamp NOT NULL,
   PRIMARY KEY (`id_password_reset`) USING BTREE,
   KEY `id_user` (`id_user`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for tvtime_import (background job tracking for the TV
+-- Time GDPR-export importer - see Api\Controller\Import\*. Processed by a
+-- separate cron-triggered endpoint rather than inline in the upload
+-- request, since syncing a whole TV Time history from TheTVDB is many
+-- minutes of HTTP calls - and confirmed empirically to exceed even
+-- Apache's own 60s reverse-proxy Timeout well before finishing - so each
+-- call to that endpoint only processes one time-boxed batch of shows,
+-- resuming next call via processed_show_ids until nothing is left)
+-- ----------------------------
+DROP TABLE IF EXISTS `tvtime_import`;
+CREATE TABLE `tvtime_import` (
+  `id_tvtime_import` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `status` enum('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
+  `zip_path` varchar(500) NOT NULL,
+  -- JSON array of TheTVDB series ids already synced+applied - the resume
+  -- checkpoint between batches
+  `processed_show_ids` text,
+  -- JSON summary, updated incrementally after every batch (shows synced,
+  -- episodes marked watched, shows not found on TheTVDB, ...)
+  `summary` text,
+  `error` text,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_tvtime_import`) USING BTREE,
+  KEY `id_user` (`id_user`),
+  KEY `status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 1;

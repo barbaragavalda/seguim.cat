@@ -23,6 +23,31 @@ class Watchlist extends Model
         $this->mysql->query($sql, $params);
     }
 
+    /**
+     * used only by the TV Time importer (Api\Model\TvTimeImport\Processor) -
+     * an upsert rather than add()'s INSERT IGNORE, so re-running an import
+     * (or importing after the show was already added normally) still
+     * updates the archived/removed flags rather than silently keeping
+     * whatever was there before
+     */
+    public function addFromImport(int $idUser, int $idSerie, bool $archived, bool $removed): void
+    {
+        $sql    = '
+            INSERT INTO user_watchlist (id_user, id_serie, archived, removed)
+            VALUES (:id_user, :id_serie, :archived, :removed)
+            ON DUPLICATE KEY UPDATE archived = :archived_upd, removed = :removed_upd
+        ';
+        $params = array(
+            'id_user'      => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie'     => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'archived'     => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
+            'archived_upd' => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
+            'removed'      => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+            'removed_upd'  => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+        );
+        $this->mysql->query($sql, $params);
+    }
+
     public function remove(int $idUser, int $idSerie): void
     {
         $sql    = '
@@ -84,7 +109,7 @@ class Watchlist extends Model
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
             INNER JOIN user_episode_watched uew ON uew.id_user = w.id_user
             INNER JOIN episode e ON e.id_episode = uew.id_episode AND e.id_serie = s.id_serie
-            WHERE w.id_user = :id_user
+            WHERE w.id_user = :id_user AND w.removed = 0
             GROUP BY s.id_serie
             ORDER BY MAX(uew.watched_at) DESC
         ';
@@ -118,7 +143,7 @@ class Watchlist extends Model
             FROM user_watchlist w
             INNER JOIN serie s ON s.id_serie = w.id_serie
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-            WHERE w.id_user = :id_user
+            WHERE w.id_user = :id_user AND w.removed = 0
               AND NOT EXISTS (
                   SELECT 1
                   FROM user_episode_watched uew
