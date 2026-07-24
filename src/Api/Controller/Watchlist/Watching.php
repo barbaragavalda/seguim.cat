@@ -14,11 +14,8 @@ class Watching extends Controller
     protected function run(): void
     {
         $idAppacmanLang = Languages::idForCulture($this->config->getLanguage()) ?? 0;
-        $page           = max(0, (int) ($_GET['page'] ?? 0));
 
-        $result = (new Watchlist())->listWatching($this->user->getID(), $idAppacmanLang, $page);
-        $this->assign('watchlist', $result['results']);
-        $this->assign('hasMore', $result['hasMore']);
+        $this->assign('watchlist', (new Watchlist())->listWatching($this->user->getID(), $idAppacmanLang));
     }
 
 }

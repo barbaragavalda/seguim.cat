@@ -65,13 +65,13 @@ class Watchlist extends Model
 
     /**
      * series with at least one watched episode, most-recently-watched first
-     * (i.e. "continue watching") - $idAppacmanLang, pagination and the
-     * name/overview/image/next_episode/remaining_episodes treatment are the
-     * same as listNotStarted(), see that method's docblock
-     *
-     * @return array{results: array, hasMore: bool}
+     * (i.e. "continue watching") - not paginated, unlike listNotStarted():
+     * a personal tracker's in-progress list stays small by nature, so the
+     * extra page/hasMore surface isn't worth it here. $idAppacmanLang and
+     * the name/overview/image/next_episode/remaining_episodes treatment are
+     * the same as listNotStarted(), see that method's docblock
      */
-    public function listWatching(int $idUser, int $idAppacmanLang, int $page): array
+    public function listWatching(int $idUser, int $idAppacmanLang): array
     {
         $sql    = '
             SELECT s.*, MAX(sl.name) AS name, MAX(sl.overview) AS overview
@@ -83,11 +83,14 @@ class Watchlist extends Model
             WHERE w.id_user = :id_user
             GROUP BY s.id_serie
             ORDER BY MAX(uew.watched_at) DESC
-            LIMIT :limit OFFSET :offset
         ';
-        $rows   = $this->mysql->query($sql, $this->pageParams($idUser, $idAppacmanLang, $page));
+        $params = array(
+            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
+        );
+        $rows   = $this->mysql->query($sql, $params);
 
-        return $this->finalizePage($rows, $idUser);
+        return $this->finalizeRows($rows, $idUser);
     }
 
     /**
@@ -143,6 +146,11 @@ class Watchlist extends Model
         $hasMore = count($rows) > self::PAGE_SIZE;
         $rows    = array_slice($rows, 0, self::PAGE_SIZE);
 
+        return array('results' => $this->finalizeRows($rows, $idUser), 'hasMore' => $hasMore);
+    }
+
+    private function finalizeRows(array $rows, int $idUser): array
+    {
         foreach ($rows as &$row) {
             $row['name']     = $row['name'] ?: $row['default_name'];
             $row['overview'] = $row['overview'] ?: $row['default_overview'];
@@ -162,7 +170,7 @@ class Watchlist extends Model
         }
         unset($row);
 
-        return array('results' => $rows, 'hasMore' => $hasMore);
+        return $rows;
     }
 
     /**
