@@ -53,6 +53,54 @@ class Watchlist extends Model
         $this->mysql->query($sql, $params);
     }
 
+    /**
+     * user-driven archive/unarchive (Api\Controller\Watchlist\{Archive,
+     * Unarchive}) - same `archived` flag the TV Time importer sets, just
+     * togglable by hand now too. A no-op if $idSerie isn't actually in the
+     * user's watchlist, same tolerant style as remove() below
+     */
+    public function setArchived(int $idUser, int $idSerie, bool $archived): void
+    {
+        $sql    = '
+            UPDATE user_watchlist
+            SET archived = :archived
+            WHERE id_user = :id_user AND id_serie = :id_serie
+        ';
+        $params = array(
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'archived' => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
+        );
+        $this->mysql->query($sql, $params);
+    }
+
+    /**
+     * user-driven mark-removed/restore (Api\Controller\Watchlist\
+     * {MarkRemoved,Restore}) - unlike remove() below, this keeps the row
+     * (and its watch history) and just hides it from both watchlist
+     * listings, same `removed` flag the TV Time importer sets for a show
+     * no longer followed there
+     */
+    public function setRemoved(int $idUser, int $idSerie, bool $removed): void
+    {
+        $sql    = '
+            UPDATE user_watchlist
+            SET removed = :removed
+            WHERE id_user = :id_user AND id_serie = :id_serie
+        ';
+        $params = array(
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'removed'  => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+        );
+        $this->mysql->query($sql, $params);
+    }
+
+    /**
+     * hard delete - the row (and its archived/removed flags) is gone
+     * entirely, unlike setRemoved()'s soft hide above. Watched-episode
+     * history isn't touched (a separate table)
+     */
     public function remove(int $idUser, int $idSerie): void
     {
         $sql    = '
