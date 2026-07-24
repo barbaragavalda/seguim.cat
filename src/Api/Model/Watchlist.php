@@ -210,6 +210,17 @@ class Watchlist extends Model
                 ? ($next['name'] ?: $next['default_name'])
                 : null;
             $row['remaining_episodes']  = count($remaining);
+
+            // only reachable for a "not started" series (listWatching()
+            // already drops every remaining_episodes = 0 row before it gets
+            // here) - distinguishes "hasn't premiered yet" from "already
+            // caught up", which look identical (next_episode = null,
+            // remaining_episodes = 0) without this: a not-started show can
+            // only have remaining_episodes = 0 because nothing's aired yet,
+            // since it's zero-watched by definition
+            $row['premiere_in_days'] = $next === null
+                ? $this->daysUntilPremiere((int) $row['id_serie'])
+                : null;
         }
         unset($row);
 
@@ -247,6 +258,28 @@ class Watchlist extends Model
             'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
         );
         return $this->mysql->query($sql, $params);
+    }
+
+    /**
+     * days until the earliest still-upcoming aired date among $idSerie's
+     * regular episodes - null when there isn't one (already airing, ended,
+     * or TheTVDB just doesn't have a date yet)
+     */
+    private function daysUntilPremiere(int $idSerie): ?int
+    {
+        $sql    = '
+            SELECT DATEDIFF(MIN(e.aired), CURDATE()) AS days
+            FROM episode e
+            WHERE e.id_serie = :id_serie
+              AND e.season_number > 0
+              AND e.aired IS NOT NULL AND e.aired > CURDATE()
+        ';
+        $params = array(
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+        );
+        $days   = $this->mysql->query($sql, $params)[0]['days'] ?? null;
+
+        return $days !== null ? (int) $days : null;
     }
 
 }
