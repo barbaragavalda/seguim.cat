@@ -27,6 +27,11 @@ final class Languages
         return null;
     }
 
+    public static function cultureForId(int $idAppacmanLang): ?string
+    {
+        return self::ALL[$idAppacmanLang]['culture'] ?? null;
+    }
+
     public static function tvdbCode(int $idAppacmanLang): ?string
     {
         return self::ALL[$idAppacmanLang]['tvdb'] ?? null;
