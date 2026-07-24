@@ -33,8 +33,8 @@ final class Processor
 
     /**
      * @param array{
-     *     shows: array<int, array{archived: bool, removed: bool}>,
-     *     watched: array<int, array<int, true>>
+     *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
+     *     watched: array<int, array<int, string>>
      * } $parsed
      * @param array<int> $alreadyDone show ids a previous batch already handled
      * @return array{
@@ -75,11 +75,11 @@ final class Processor
             }
 
             $episodeRows = (new Episode())->syncForSeries($info['id_serie'], $tvdbSeriesId, $this->client);
-            $watchlist->addFromImport($idUser, $info['id_serie'], $flags['archived'], $flags['removed']);
+            $watchlist->addFromImport($idUser, $info['id_serie'], $flags['archived'], $flags['removed'], $flags['created_at']);
             $showsSynced++;
 
             $idEpisodeByTvdbId = array_column($episodeRows, 'id_episode', 'tvdb_id');
-            foreach (array_keys($parsed['watched'][$tvdbSeriesId] ?? array()) as $tvdbEpisodeId) {
+            foreach ($parsed['watched'][$tvdbSeriesId] ?? array() as $tvdbEpisodeId => $watchedAt) {
                 $idEpisode = $idEpisodeByTvdbId[$tvdbEpisodeId] ?? null;
                 if ($idEpisode === null) {
                     // an episode TV Time knows about that this series' current
@@ -88,7 +88,7 @@ final class Processor
                     // fail the whole import over one stale reference
                     continue;
                 }
-                $watchedEpisode->markWatched($idUser, (int) $idEpisode);
+                $watchedEpisode->markWatched($idUser, (int) $idEpisode, $watchedAt);
                 $episodesWatched++;
             }
 

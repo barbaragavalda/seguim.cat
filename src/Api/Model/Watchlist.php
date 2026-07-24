@@ -28,13 +28,17 @@ class Watchlist extends Model
      * an upsert rather than add()'s INSERT IGNORE, so re-running an import
      * (or importing after the show was already added normally) still
      * updates the archived/removed flags rather than silently keeping
-     * whatever was there before
+     * whatever was there before. $createdAt preserves TV Time's own follow
+     * date (falls back to "now" when the export has none - see
+     * Parser::parse()'s "removed" shows) so listNotStarted()'s "most
+     * recently added" ordering stays meaningful for imported shows instead
+     * of every one of them tying for the import's own timestamp
      */
-    public function addFromImport(int $idUser, int $idSerie, bool $archived, bool $removed): void
+    public function addFromImport(int $idUser, int $idSerie, bool $archived, bool $removed, ?string $createdAt = null): void
     {
         $sql    = '
-            INSERT INTO user_watchlist (id_user, id_serie, archived, removed)
-            VALUES (:id_user, :id_serie, :archived, :removed)
+            INSERT INTO user_watchlist (id_user, id_serie, archived, removed, created)
+            VALUES (:id_user, :id_serie, :archived, :removed, :created)
             ON DUPLICATE KEY UPDATE archived = :archived_upd, removed = :removed_upd
         ';
         $params = array(
@@ -44,6 +48,7 @@ class Watchlist extends Model
             'archived_upd' => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
             'removed'      => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
             'removed_upd'  => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+            'created'      => array('value' => $createdAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
         );
         $this->mysql->query($sql, $params);
     }
@@ -96,9 +101,12 @@ class Watchlist extends Model
      * airs, since remaining_episodes is computed fresh every call, not
      * stored. Not paginated, unlike listNotStarted(): a personal tracker's
      * in-progress list stays small by nature, so the extra page/hasMore
-     * surface isn't worth it here. $idAppacmanLang and the name/overview/
-     * image/next_episode/remaining_episodes treatment are the same as
-     * listNotStarted(), see that method's docblock
+     * surface isn't worth it here. Archived/removed shows (only ever set by
+     * the TV Time importer) are excluded here too, same as listNotStarted()
+     * - the rows themselves aren't deleted, just hidden from both lists.
+     * $idAppacmanLang and the name/overview/image/next_episode/
+     * remaining_episodes treatment are the same as listNotStarted(), see
+     * that method's docblock
      */
     public function listWatching(int $idUser, int $idAppacmanLang): array
     {
@@ -109,7 +117,7 @@ class Watchlist extends Model
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
             INNER JOIN user_episode_watched uew ON uew.id_user = w.id_user
             INNER JOIN episode e ON e.id_episode = uew.id_episode AND e.id_serie = s.id_serie
-            WHERE w.id_user = :id_user AND w.removed = 0
+            WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
             GROUP BY s.id_serie
             ORDER BY MAX(uew.watched_at) DESC
         ';
@@ -130,7 +138,9 @@ class Watchlist extends Model
      * getLanguage())) - a LEFT JOIN, not INNER, so a series still shows up
      * even if that language's translation hasn't been synced yet (sl.name/
      * sl.overview just come back null, same as Series/Detail's fallback:
-     * sl.name ?: s.default_name). Pagination fetches one extra row
+     * sl.name ?: s.default_name). Archived/removed shows (only ever set by
+     * the TV Time importer) are excluded - the rows themselves aren't
+     * deleted, just hidden from this list. Pagination fetches one extra row
      * (PAGE_SIZE + 1, see pageParams()) purely to detect hasMore without a
      * separate COUNT(*) query - finalizePage() trims it back off.
      *
@@ -143,7 +153,7 @@ class Watchlist extends Model
             FROM user_watchlist w
             INNER JOIN serie s ON s.id_serie = w.id_serie
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-            WHERE w.id_user = :id_user AND w.removed = 0
+            WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
               AND NOT EXISTS (
                   SELECT 1
                   FROM user_episode_watched uew

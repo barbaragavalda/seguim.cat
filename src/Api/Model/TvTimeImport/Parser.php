@@ -22,6 +22,14 @@ use Generator;
  * missing (mostly very old history TV Time itself never logged
  * per-episode) simply isn't imported - there's no reliable way to guess
  * *which* specific episodes those were.
+ *
+ * Every source file carries its own `created_at` - preserved here (rather
+ * than letting the importer stamp everything with "now") so the app's own
+ * date-ordered views (Watchlist::listWatching()'s "most recently watched",
+ * listNotStarted()'s "most recently added") stay meaningful for imported
+ * data instead of every row tying for the same import timestamp. When the
+ * same episode appears in more than one source with different timestamps,
+ * the earliest one wins - the first time it was genuinely marked watched.
  */
 final class Parser
 {
@@ -41,8 +49,8 @@ final class Parser
 
     /**
      * @return array{
-     *     shows: array<int, array{archived: bool, removed: bool}>,
-     *     watched: array<int, array<int, true>>
+     *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
+     *     watched: array<int, array<int, string>>
      * }
      */
     public function parse(string $dir): array
@@ -59,10 +67,12 @@ final class Parser
         // a show with watch history but no row in followed_tv_show.csv at
         // all was unfollowed/deleted in TVTime at some point - still worth
         // importing the history, just flagged so it doesn't show up as an
-        // active watchlist entry
+        // active watchlist entry. No follow date survives for these (the
+        // row itself is gone), so created_at is left null - the importer
+        // falls back to "now" for those specifically.
         foreach (array_keys($watched) as $tvdbId) {
             if (!isset($shows[$tvdbId])) {
-                $shows[$tvdbId] = array('archived' => false, 'removed' => true);
+                $shows[$tvdbId] = array('archived' => false, 'removed' => true, 'created_at' => null);
             }
         }
 
@@ -70,7 +80,7 @@ final class Parser
     }
 
     /**
-     * @return array{0: array<int, array{archived: bool, removed: bool}>, 1: array<string, int>}
+     * @return array{0: array<int, array{archived: bool, removed: bool, created_at: ?string}>, 1: array<string, int>}
      */
     private function parseFollowedShows(string $path): array
     {
@@ -81,7 +91,11 @@ final class Parser
             if ($tvdbId === 0) {
                 continue;
             }
-            $shows[$tvdbId] = array('archived' => ($row['archived'] ?? '0') === '1', 'removed' => false);
+            $shows[$tvdbId] = array(
+                'archived'   => ($row['archived'] ?? '0') === '1',
+                'removed'    => false,
+                'created_at' => ($row['created_at'] ?? '') !== '' ? $row['created_at'] : null,
+            );
             if (($row['tv_show_name'] ?? '') !== '') {
                 $nameToId[$row['tv_show_name']] = $tvdbId;
             }
@@ -91,7 +105,7 @@ final class Parser
     }
 
     /**
-     * @param array<int, array<int, true>> $watched
+     * @param array<int, array<int, string>> $watched
      */
     private function mergeTrackingRecords(string $path, array &$watched): void
     {
@@ -104,12 +118,12 @@ final class Parser
             if ($seriesId === 0 || $episodeId === 0) {
                 continue;
             }
-            $watched[$seriesId][$episodeId] = true;
+            $this->recordWatch($watched, $seriesId, $episodeId, $row['created_at'] ?? null);
         }
     }
 
     /**
-     * @param array<int, array<int, true>> $watched
+     * @param array<int, array<int, string>> $watched
      */
     private function mergeTrackingRecordsV2(string $path, array &$watched): void
     {
@@ -122,13 +136,13 @@ final class Parser
             if ($seriesId === 0 || $episodeId === 0) {
                 continue;
             }
-            $watched[$seriesId][$episodeId] = true;
+            $this->recordWatch($watched, $seriesId, $episodeId, $row['created_at'] ?? null);
         }
     }
 
     /**
-     * @param array<string, int>           $nameToId
-     * @param array<int, array<int, true>> $watched
+     * @param array<string, int>              $nameToId
+     * @param array<int, array<int, string>>  $watched
      */
     private function mergeNamedWatchLog(string $path, array $nameToId, array &$watched): void
     {
@@ -140,7 +154,22 @@ final class Parser
             if ($tvdbId === null || $episodeId === 0) {
                 continue;
             }
-            $watched[$tvdbId][$episodeId] = true;
+            $this->recordWatch($watched, $tvdbId, $episodeId, $row['created_at'] ?? null);
+        }
+    }
+
+    /**
+     * keeps the earliest created_at seen for a given episode across every
+     * source file - falls back to "now" only when a row genuinely has none
+     *
+     * @param array<int, array<int, string>> $watched
+     */
+    private function recordWatch(array &$watched, int $seriesId, int $episodeId, ?string $createdAt): void
+    {
+        $createdAt = $createdAt !== null && $createdAt !== '' ? $createdAt : date('Y-m-d H:i:s');
+        $existing  = $watched[$seriesId][$episodeId] ?? null;
+        if ($existing === null || $createdAt < $existing) {
+            $watched[$seriesId][$episodeId] = $createdAt;
         }
     }
 
