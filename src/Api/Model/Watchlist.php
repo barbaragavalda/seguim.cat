@@ -8,6 +8,8 @@ use PDO;
 class Watchlist extends Model
 {
 
+    private const int PAGE_SIZE = 20;
+
     public function add(int $idUser, int $idSerie): void
     {
         $sql    = '
@@ -62,13 +64,46 @@ class Watchlist extends Model
     }
 
     /**
-     * $idAppacmanLang is the current request's already-resolved language
-     * (Api\Model\TheTvdb\Languages::idForCulture(Config::getLanguage())) - a
-     * LEFT JOIN, not INNER, so a series still shows up even if that language's
-     * translation hasn't been synced yet (sl.name/sl.overview just come back
-     * null, same as Series/Detail's fallback: sl.name ?: s.default_name)
+     * series with at least one watched episode, most-recently-watched first
+     * (i.e. "continue watching") - $idAppacmanLang, pagination and the
+     * name/overview/image/next_episode/remaining_episodes treatment are the
+     * same as listNotStarted(), see that method's docblock
+     *
+     * @return array{results: array, hasMore: bool}
      */
-    public function listForUser(int $idUser, int $idAppacmanLang): array
+    public function listWatching(int $idUser, int $idAppacmanLang, int $page): array
+    {
+        $sql    = '
+            SELECT s.*, MAX(sl.name) AS name, MAX(sl.overview) AS overview
+            FROM user_watchlist w
+            INNER JOIN serie s ON s.id_serie = w.id_serie
+            LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+            INNER JOIN user_episode_watched uew ON uew.id_user = w.id_user
+            INNER JOIN episode e ON e.id_episode = uew.id_episode AND e.id_serie = s.id_serie
+            WHERE w.id_user = :id_user
+            GROUP BY s.id_serie
+            ORDER BY MAX(uew.watched_at) DESC
+            LIMIT :limit OFFSET :offset
+        ';
+        $rows   = $this->mysql->query($sql, $this->pageParams($idUser, $idAppacmanLang, $page));
+
+        return $this->finalizePage($rows, $idUser);
+    }
+
+    /**
+     * series with zero watched episodes, most-recently-added-to-the-
+     * watchlist first. $idAppacmanLang is the current request's already-
+     * resolved language (Api\Model\TheTvdb\Languages::idForCulture(Config::
+     * getLanguage())) - a LEFT JOIN, not INNER, so a series still shows up
+     * even if that language's translation hasn't been synced yet (sl.name/
+     * sl.overview just come back null, same as Series/Detail's fallback:
+     * sl.name ?: s.default_name). Pagination fetches one extra row
+     * (PAGE_SIZE + 1, see pageParams()) purely to detect hasMore without a
+     * separate COUNT(*) query - finalizePage() trims it back off.
+     *
+     * @return array{results: array, hasMore: bool}
+     */
+    public function listNotStarted(int $idUser, int $idAppacmanLang, int $page): array
     {
         $sql    = '
             SELECT s.*, sl.name, sl.overview
@@ -76,13 +111,37 @@ class Watchlist extends Model
             INNER JOIN serie s ON s.id_serie = w.id_serie
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
             WHERE w.id_user = :id_user
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM user_episode_watched uew
+                  INNER JOIN episode e ON e.id_episode = uew.id_episode
+                  WHERE uew.id_user = w.id_user AND e.id_serie = s.id_serie
+              )
             ORDER BY w.created DESC
+            LIMIT :limit OFFSET :offset
         ';
-        $params = array(
+        $rows   = $this->mysql->query($sql, $this->pageParams($idUser, $idAppacmanLang, $page));
+
+        return $this->finalizePage($rows, $idUser);
+    }
+
+    private function pageParams(int $idUser, int $idAppacmanLang, int $page): array
+    {
+        return array(
             'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
             'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
+            'limit'            => array('value' => self::PAGE_SIZE + 1, 'type' => PDO::PARAM_INT),
+            'offset'           => array('value' => max(0, $page) * self::PAGE_SIZE, 'type' => PDO::PARAM_INT),
         );
-        $rows   = $this->mysql->query($sql, $params);
+    }
+
+    /**
+     * @return array{results: array, hasMore: bool}
+     */
+    private function finalizePage(array $rows, int $idUser): array
+    {
+        $hasMore = count($rows) > self::PAGE_SIZE;
+        $rows    = array_slice($rows, 0, self::PAGE_SIZE);
 
         foreach ($rows as &$row) {
             $row['name']     = $row['name'] ?: $row['default_name'];
@@ -94,16 +153,16 @@ class Watchlist extends Model
             $row['image'] = $row['background'];
             unset($row['background']);
 
-            $remaining                  = $this->remainingEpisodes($idUser, (int) $row['id_serie']);
-            $next                       = $remaining[0] ?? null;
-            $row['next_episode']        = $next !== null
+            $remaining                 = $this->remainingEpisodes($idUser, (int) $row['id_serie']);
+            $next                      = $remaining[0] ?? null;
+            $row['next_episode']       = $next !== null
                 ? sprintf('T%d - E%d', $next['season_number'], $next['episode_number'])
                 : null;
-            $row['remaining_episodes']  = count($remaining);
+            $row['remaining_episodes'] = count($remaining);
         }
         unset($row);
 
-        return $rows;
+        return array('results' => $rows, 'hasMore' => $hasMore);
     }
 
     /**
