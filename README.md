@@ -37,7 +37,11 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     | GET    | `/api/watchlist/watching`   | Series with ≥1 watched episode and something left to watch, most-recently-watched first (no pagination - see below) |
     | GET    | `/api/watchlist/not-started` | Series with 0 watched episodes, most-recently-added first (`?page=`, 0-based - response includes `hasMore`) |
     | POST   | `/api/watchlist/{tvdbId}`   | Add a series to the watchlist                          |
-    | DELETE | `/api/watchlist/{tvdbId}`   | Remove a series from the watchlist                     |
+    | DELETE | `/api/watchlist/{tvdbId}`   | Remove a series from the watchlist (hard delete - see below) |
+    | POST   | `/api/watchlist/{tvdbId}/archived` | Archive a series (hidden from both lists, not deleted) |
+    | DELETE | `/api/watchlist/{tvdbId}/archived` | Unarchive it                                   |
+    | POST   | `/api/watchlist/{tvdbId}/removed` | Mark a series removed (hidden from both lists, not deleted) |
+    | DELETE | `/api/watchlist/{tvdbId}/removed` | Restore it                                      |
     | POST   | `/api/episode/{tvdbId}/watched` | Mark an episode watched                            |
     | DELETE | `/api/episode/{tvdbId}/watched` | Mark an episode unwatched                          |
     | POST   | `/api/import/tvtime`        | Upload a TV Time GDPR data export (`multipart/form-data`, field `file`), queues an import job |
@@ -80,9 +84,12 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     can't actually happen here, since `not-started` is zero-watched by definition) or *hasn't aired
     at all yet*. `premiere_in_days` (days until the earliest still-upcoming aired date, `null`
     otherwise) exists so a client can tell "coming soon" apart from "you're all caught up" instead
-    of both looking identical (`next_episode: null`). Archived/removed shows (see the TV Time
-    importer below) never appear in either watchlist endpoint - the rows stay in the database,
-    just hidden from both lists.
+    of both looking identical (`next_episode: null`). Archived/removed shows (`user_watchlist`'s
+    `archived`/`removed` flags - set automatically by the TV Time importer below, or toggled by hand
+    via the `archived`/`removed` endpoints above) never appear in either watchlist endpoint - the
+    rows stay in the database (watched-episode history included), just hidden from both lists. This
+    is deliberately different from `DELETE /watchlist/{tvdbId}`, which actually deletes the
+    `user_watchlist` row.
 
   - **TV Time importer** (`src/Api/Model/TvTimeImport/`, `src/Api/Controller/Import/`): lets a user
     upload the GDPR data export TV Time offered before shutting down, recovering their watchlist
