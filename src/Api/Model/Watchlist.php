@@ -34,6 +34,18 @@ class Watchlist extends Model
         $this->mysql->query($sql, $params);
     }
 
+    public function removeAllForUser(int $idUser): void
+    {
+        $sql    = '
+            DELETE FROM user_watchlist
+            WHERE id_user = :id_user
+        ';
+        $params = array(
+            'id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+        );
+        $this->mysql->query($sql, $params);
+    }
+
     public function has(int $idUser, int $idSerie): bool
     {
         $sql    = '
@@ -75,10 +87,54 @@ class Watchlist extends Model
         foreach ($rows as &$row) {
             $row['name']     = $row['name'] ?: $row['default_name'];
             $row['overview'] = $row['overview'] ?: $row['default_overview'];
+
+            // watchlist only ever shows the background/fanart, never the
+            // poster - confirmed with the user, so `image` is overwritten
+            // rather than kept alongside `background`
+            $row['image'] = $row['background'];
+            unset($row['background']);
+
+            $remaining                  = $this->remainingEpisodes($idUser, (int) $row['id_serie']);
+            $next                       = $remaining[0] ?? null;
+            $row['next_episode']        = $next !== null
+                ? sprintf('T%d - E%d', $next['season_number'], $next['episode_number'])
+                : null;
+            $row['remaining_episodes']  = count($remaining);
         }
         unset($row);
 
         return $rows;
+    }
+
+    /**
+     * unwatched episodes of $idSerie, oldest first - season 0 (specials) is
+     * always excluded, same convention Series/Detail already uses for
+     * season_count: TheTVDB has no reliable field to tell a plot-relevant
+     * special apart from a clip-show/recap one (checked empirically against
+     * Lost and Euphoria - `airsBeforeSeason`/`airsBeforeEpisode`/`finaleType`
+     * are set inconsistently on both kinds in both shows), so there's no
+     * sound way to count only the specials that matter. Episodes not yet
+     * aired are excluded too - nothing to "watch" yet.
+     *
+     * @return array<int, array{season_number: int, episode_number: int}>
+     */
+    private function remainingEpisodes(int $idUser, int $idSerie): array
+    {
+        $sql    = '
+            SELECT e.season_number, e.episode_number
+            FROM episode e
+            LEFT JOIN user_episode_watched w ON w.id_episode = e.id_episode AND w.id_user = :id_user
+            WHERE e.id_serie = :id_serie
+              AND e.season_number > 0
+              AND e.aired IS NOT NULL AND e.aired <= CURDATE()
+              AND w.id_episode IS NULL
+            ORDER BY e.season_number ASC, e.episode_number ASC
+        ';
+        $params = array(
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+        );
+        return $this->mysql->query($sql, $params);
     }
 
 }

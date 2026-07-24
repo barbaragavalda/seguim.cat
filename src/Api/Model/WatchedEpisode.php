@@ -34,6 +34,18 @@ class WatchedEpisode extends Model
         $this->mysql->query($sql, $params);
     }
 
+    public function removeAllForUser(int $idUser): void
+    {
+        $sql    = '
+            DELETE FROM user_episode_watched
+            WHERE id_user = :id_user
+        ';
+        $params = array(
+            'id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+        );
+        $this->mysql->query($sql, $params);
+    }
+
     /**
      * @return int[] ids (episode.id_episode) of the user's watched episodes within $idSerie
      */
