@@ -14,8 +14,12 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
   Flutter client:
   - Auth (from `freimguork-webservice`, via the `vendorApps` config key — not duplicated here):
     `POST /api/register` (`email`, `password`, `username` — 3-20 chars, letters/numbers/`_`/`.`,
-    unique), `POST /api/login`, `POST /api/logout`, `DELETE /api/account` (deletes the user and
-    revokes every device token), `POST /api/password/forgot` (`email` — always the same response
+    unique), `POST /api/login`, `POST /api/logout`, `DELETE /api/account` (deletes the user,
+    revokes every device token, and - via this project's own `Api\Controller\Account\Delete`,
+    which overrides `Webservice\Controller\DeleteAccount` on the same path since a project's own
+    routes win over a vendor package's, see `Core\Bootstrap::loadRoutes()` - also removes the
+    user's own `user_watchlist`/`user_episode_watched` rows, which the vendor package has no idea
+    exist), `POST /api/password/forgot` (`email` - always the same response
     whether or not it's registered, emails a 6-digit code valid 15 min if it is),
     `POST /api/password/reset` (`email`, `code`, `password` — max 5 wrong attempts before the code
     is locked out; also revokes every device token, so a compromised account gets logged out
@@ -30,7 +34,8 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     |--------|-----------------------------|-------------------------------------------------------|
     | GET    | `/api/series/search`        | Search TheTVDB series (`?query=`, `?page=`, 0-based - response includes `hasMore`) |
     | GET    | `/api/series/{tvdbId}`      | Series detail + episode list (lazy-mirrors from TheTVDB) |
-    | GET    | `/api/watchlist`            | The logged-in user's watchlist                        |
+    | GET    | `/api/watchlist/watching`   | Series with ≥1 watched episode and something left to watch, most-recently-watched first (no pagination - see below) |
+    | GET    | `/api/watchlist/not-started` | Series with 0 watched episodes, most-recently-added first (`?page=`, 0-based - response includes `hasMore`) |
     | POST   | `/api/watchlist/{tvdbId}`   | Add a series to the watchlist                          |
     | DELETE | `/api/watchlist/{tvdbId}`   | Remove a series from the watchlist                     |
     | POST   | `/api/episode/{tvdbId}/watched` | Mark an episode watched                            |
@@ -45,9 +50,27 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     searches for or opens a given series — there's no full-catalog background sync. Scoped to TV
     series only for now; no movies, ratings, or "mark whole season watched" yet. `serie`'s own
     `name`/`overview` are translated per language into `serie_lang` (ca/es/en, via TheTVDB's
-    `GET /series/{id}/translations/{language}`) rather than duplicated on `serie` itself — the
-    `api` sub-project's `Config::getLanguage()` (`Accept-Language`-resolved, see below) picks which
-    one a given response actually returns.
+    `GET /series/{id}/translations/{language}`) rather than duplicated on `serie` itself, and
+    `episode`'s own `name`/`overview` likewise live in `episode_lang` (via
+    `GET /series/{id}/episodes/{season-type}/{lang}`, which conveniently translates every episode
+    of a series in one call) - the `api` sub-project's `Config::getLanguage()` (`Accept-Language`-
+    resolved, see below) picks which language a given response actually returns, falling back to
+    TheTVDB's own `default_name`/`default_overview` when that language has no translation.
+
+    Both watchlist endpoints return, per series: the translated `name`/`overview` (same fallback as
+    above), `image` (the series' background/fanart - the poster is dropped here, unlike
+    `series/{tvdbId}` which returns both), `next_episode` (the next unwatched episode as
+    `"T{season} - E{episode}"`) and `next_episode_name` (kept as its own field rather than
+    concatenated into `next_episode`, so a client can still parse the season/episode numbers), and
+    `remaining_episodes` (how many aired-but-unwatched episodes are left). Season 0 (specials) is
+    always excluded from the last three - TheTVDB has no reliable field to tell a plot-relevant
+    special apart from a clip-show/recap one (checked empirically against Lost and Euphoria (US):
+    `airsBeforeSeason`/`airsBeforeEpisode`/`finaleType` are set inconsistently on both kinds in both
+    shows), so there's no sound way to count only the specials that matter. Unaired episodes are
+    excluded too - nothing to watch yet. `remaining_episodes` is computed fresh on every call, not
+    stored, which is also why a series that's fully caught up (`remaining_episodes` reaches 0)
+    simply drops out of `watching` rather than needing any explicit "mark as finished" step - it
+    reappears there on its own once a new episode airs.
 
   - **Language resolution**: the `api` sub-project isn't `{lang}`-prefixed like the public site, so
     its language comes from `Accept-Language` (falling back to session, then the project's default
@@ -75,8 +98,8 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
      deliver reset codes (in dev, if this isn't set up yet, the code is logged via `error_log()`
      instead of failing the request - see `Webservice\Controller\ForgotPassword`)
 3. Create the database and import `db.sql` (Appacman's minimal schema + this project's own
-   `user`/`user_token`/`password_reset`/`serie`/`serie_lang`/`episode`/`user_watchlist`/
-   `user_episode_watched` tables — no admin user seeded, see below).
+   `user`/`user_token`/`password_reset`/`serie`/`serie_lang`/`episode`/`episode_lang`/
+   `user_watchlist`/`user_episode_watched` tables — no admin user seeded, see below).
 4. Set up the local vhost pointing `DocumentRoot` to `web/`.
 
 ## First admin user
@@ -120,11 +143,13 @@ assign (usually `1` for the first user).
   public site)
 - `web/` - served document root (front controllers, `.htaccess`, `static/`, `upload/`)
 - `src/Web/` - public site controllers/views (placeholder, not the real product)
-- `src/Api/` - the tracking backend: `Controller/{Series,Watchlist,Episode}/` (routes),
-  `Model/{Series,SerieLang,Episode,Watchlist,WatchedEpisode}.php` (local mirror + user state),
-  `Model/TheTvdb/Client.php` (TheTVDB v4 HTTP client - does its own plain `curl_init()` call
-  rather than `Core\Model\Utils\Curl`, which forces every request through a bogus local proxy in
-  dev mode and breaks real third-party calls)
+- `src/Api/` - the tracking backend: `Controller/{Series,Watchlist,Episode,Account}/` (routes -
+  `Account/Delete.php` overrides `freimguork-webservice`'s own `DELETE /account`, see above),
+  `Model/{Series,SerieLang,Episode,EpisodeLang,Watchlist,WatchedEpisode}.php` (local mirror + user
+  state), `Model/TheTvdb/{Client,Languages}.php` (TheTVDB v4 HTTP client - does its own plain
+  `curl_init()` call rather than `Core\Model\Utils\Curl`, which forces every request through a
+  bogus local proxy in dev mode and breaks real third-party calls; `Languages` maps this project's
+  own `id_appacman_lang` to TheTVDB's 3-letter language codes, shared by `SerieLang`/`EpisodeLang`)
 - `src/cache/` - compiled route cache in prod + the TheTVDB bearer-token cache
   (`src/cache/{dev,prod}/thetvdb/token.json`), both gitignored, created automatically at runtime
 - `locale/en_GB/LC_MESSAGES/` - minimal `.po` header only, no project-specific msgids yet
