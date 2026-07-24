@@ -45,6 +45,13 @@ class Client
         foreach ($results as &$result) {
             $result['name']     = $result['translations'][$tvdbLanguageCode] ?? $result['name'] ?? null;
             $result['overview'] = $result['overviews'][$tvdbLanguageCode] ?? $result['overview'] ?? null;
+            // renamed to match serie.image - no background/fanart field
+            // exists on a search result at all (confirmed empirically), and
+            // fetching one would mean a separate /artworks call per result;
+            // it only ever appears once a series is actually opened
+            // (Series/Detail, serie.background)
+            $result['image'] = $result['image_url'] ?? null;
+            unset($result['image_url']);
         }
         unset($result);
 
