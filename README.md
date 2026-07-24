@@ -40,10 +40,13 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     | DELETE | `/api/watchlist/{tvdbId}`   | Remove a series from the watchlist                     |
     | POST   | `/api/episode/{tvdbId}/watched` | Mark an episode watched                            |
     | DELETE | `/api/episode/{tvdbId}/watched` | Mark an episode unwatched                          |
+    | POST   | `/api/import/tvtime`        | Upload a TV Time GDPR data export (`multipart/form-data`, field `file`), queues an import job |
+    | GET    | `/api/import/tvtime/{id}`   | Poll an import job's status/summary                    |
+    | POST   | `/api/import/tvtime/process` | Works through one batch of the oldest queued import job - see below |
 
     Every request needs an `Authorization` header: the app's own shared secret
-    (`config/api/{dev,prod}/webservice.php`) on `register`/`login`, the user's own token
-    (returned by `register`/`login`) on everything else.
+    (`config/api/{dev,prod}/webservice.php`) on `register`/`login`/`import/tvtime/process`, the
+    user's own token (returned by `register`/`login`) on everything else.
 
     Series/episode metadata is **lazily mirrored**: TheTVDB is only called (and the result cached
     into the local `serie`/`episode` tables, refreshed after 24h) the first time a user actually
@@ -72,6 +75,42 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     simply drops out of `watching` rather than needing any explicit "mark as finished" step - it
     reappears there on its own once a new episode airs.
 
+    `not-started` additionally returns `premiere_in_days`: a series with zero watched episodes can
+    have `remaining_episodes = 0` for two very different reasons - already fully watched (which
+    can't actually happen here, since `not-started` is zero-watched by definition) or *hasn't aired
+    at all yet*. `premiere_in_days` (days until the earliest still-upcoming aired date, `null`
+    otherwise) exists so a client can tell "coming soon" apart from "you're all caught up" instead
+    of both looking identical (`next_episode: null`). Archived/removed shows (see the TV Time
+    importer below) never appear in either watchlist endpoint - the rows stay in the database,
+    just hidden from both lists.
+
+  - **TV Time importer** (`src/Api/Model/TvTimeImport/`, `src/Api/Controller/Import/`): lets a user
+    upload the GDPR data export TV Time offered before shutting down, recovering their watchlist
+    and watch history into this app. TV Time's own `tv_show_id`/`episode_id` turned out to be
+    TheTVDB's own ids directly (confirmed empirically), so shows/episodes are matched and synced
+    through the same `Series`/`Episode` models the rest of the app uses - no fuzzy name matching.
+    No single file in the export lists every watched episode; `TvTimeImport\Parser` takes the union
+    of several tracking/seen-episode CSVs (validated against the export's own per-show watched
+    count) to recover 97%+ of a real watch history - what's left is old history TV Time itself
+    never logged per-episode, with no reliable way to guess which episodes those were. The parser
+    also preserves each source row's own `created_at` (earliest wins when an episode appears in more
+    than one file) rather than stamping everything with the import time, so the watchlist's own
+    date-ordered views stay meaningful for imported data too.
+
+    Syncing a full history (frequently 900+ shows) reliably outlasts Apache's own 60s reverse-proxy
+    timeout - confirmed against a real export - so `POST /import/tvtime` only stores the upload and
+    queues a job; `POST /import/tvtime/process` (meant to be pinged repeatedly by a system cron -
+    this framework has no queue/worker infra, same pattern as `freimguork-core`'s `Cronjob`
+    sub-project convention) works through one ~45s batch of the oldest queued/in-progress job per
+    call, persisting which shows are already done (`tvtime_import.processed_show_ids`) so the next
+    call resumes rather than restarting. `GET /import/tvtime/{id}` polls a job's `status`
+    (`pending`/`processing`/`done`/`failed`) and `summary` (shows synced/failed, episodes watched).
+
+    A show still followed in TV Time but archived there sets `user_watchlist.archived`; one with
+    watch history but no longer followed at all (unfollowed/deleted) sets `.removed` instead - both
+    are still imported, just hidden from both watchlist endpoints (see above) rather than dropped,
+    in case the app wants to surface them differently later.
+
   - **Language resolution**: the `api` sub-project isn't `{lang}`-prefixed like the public site, so
     its language comes from `Accept-Language` (falling back to session, then the project's default
     `ca` — see `Core\Utils\Language::initLanguage()`). This resolves *per request*, which is right
@@ -99,7 +138,11 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
      instead of failing the request - see `Webservice\Controller\ForgotPassword`)
 3. Create the database and import `db.sql` (Appacman's minimal schema + this project's own
    `user`/`user_token`/`password_reset`/`serie`/`serie_lang`/`episode`/`episode_lang`/
-   `user_watchlist`/`user_episode_watched` tables — no admin user seeded, see below).
+   `user_watchlist`/`user_episode_watched`/`tvtime_import` tables — no admin user seeded, see
+   below). **Careful re-importing this later**: `serie`/`serie_lang`/`episode`/`episode_lang` hold
+   the TheTVDB mirror cache, which can mean hundreds of shows re-fetched from scratch if wiped -
+   apply schema changes to those four tables with `ALTER TABLE` against the live database instead
+   of blindly re-running the whole file once real data exists.
 4. Set up the local vhost pointing `DocumentRoot` to `web/`.
 
 ## First admin user
@@ -143,15 +186,20 @@ assign (usually `1` for the first user).
   public site)
 - `web/` - served document root (front controllers, `.htaccess`, `static/`, `upload/`)
 - `src/Web/` - public site controllers/views (placeholder, not the real product)
-- `src/Api/` - the tracking backend: `Controller/{Series,Watchlist,Episode,Account}/` (routes -
-  `Account/Delete.php` overrides `freimguork-webservice`'s own `DELETE /account`, see above),
-  `Model/{Series,SerieLang,Episode,EpisodeLang,Watchlist,WatchedEpisode}.php` (local mirror + user
-  state), `Model/TheTvdb/{Client,Languages}.php` (TheTVDB v4 HTTP client - does its own plain
+- `src/Api/` - the tracking backend: `Controller/{Series,Watchlist,Episode,Account,Import}/`
+  (routes - `Account/Delete.php` overrides `freimguork-webservice`'s own `DELETE /account`, see
+  above; `Import/{TvTime,TvTimeStatus,TvTimeProcess}.php` are the TV Time importer's upload/poll/
+  cron-tick endpoints, see above), `Model/{Series,SerieLang,Episode,EpisodeLang,Watchlist,
+  WatchedEpisode,TvTimeImport}.php` (local mirror + user state + import job tracking),
+  `Model/TvTimeImport/{Parser,Processor}.php` (export parsing + applying a batch to a real
+  account), `Model/TheTvdb/{Client,Languages}.php` (TheTVDB v4 HTTP client - does its own plain
   `curl_init()` call rather than `Core\Model\Utils\Curl`, which forces every request through a
   bogus local proxy in dev mode and breaks real third-party calls; `Languages` maps this project's
   own `id_appacman_lang` to TheTVDB's 3-letter language codes, shared by `SerieLang`/`EpisodeLang`)
-- `src/cache/` - compiled route cache in prod + the TheTVDB bearer-token cache
-  (`src/cache/{dev,prod}/thetvdb/token.json`), both gitignored, created automatically at runtime
+- `src/cache/` - compiled route cache in prod, the TheTVDB bearer-token cache
+  (`src/cache/{dev,prod}/thetvdb/token.json`), and uploaded TV Time exports/their extracted CSVs
+  while a job is in progress (`src/cache/{dev,prod}/imports/`) - all gitignored, created
+  automatically at runtime
 - `locale/en_GB/LC_MESSAGES/` - minimal `.po` header only, no project-specific msgids yet
 - `db.sql` - Appacman's minimal schema + this project's own tables, no admin user (see above)
 
