@@ -90,7 +90,7 @@ class Watchlist extends Model
         );
         $rows   = $this->mysql->query($sql, $params);
 
-        return $this->finalizeRows($rows, $idUser);
+        return $this->finalizeRows($rows, $idUser, $idAppacmanLang);
     }
 
     /**
@@ -125,7 +125,7 @@ class Watchlist extends Model
         ';
         $rows   = $this->mysql->query($sql, $this->pageParams($idUser, $idAppacmanLang, $page));
 
-        return $this->finalizePage($rows, $idUser);
+        return $this->finalizePage($rows, $idUser, $idAppacmanLang);
     }
 
     private function pageParams(int $idUser, int $idAppacmanLang, int $page): array
@@ -141,15 +141,15 @@ class Watchlist extends Model
     /**
      * @return array{results: array, hasMore: bool}
      */
-    private function finalizePage(array $rows, int $idUser): array
+    private function finalizePage(array $rows, int $idUser, int $idAppacmanLang): array
     {
         $hasMore = count($rows) > self::PAGE_SIZE;
         $rows    = array_slice($rows, 0, self::PAGE_SIZE);
 
-        return array('results' => $this->finalizeRows($rows, $idUser), 'hasMore' => $hasMore);
+        return array('results' => $this->finalizeRows($rows, $idUser, $idAppacmanLang), 'hasMore' => $hasMore);
     }
 
-    private function finalizeRows(array $rows, int $idUser): array
+    private function finalizeRows(array $rows, int $idUser, int $idAppacmanLang): array
     {
         foreach ($rows as &$row) {
             $row['name']     = $row['name'] ?: $row['default_name'];
@@ -161,12 +161,15 @@ class Watchlist extends Model
             $row['image'] = $row['background'];
             unset($row['background']);
 
-            $remaining                 = $this->remainingEpisodes($idUser, (int) $row['id_serie']);
-            $next                      = $remaining[0] ?? null;
-            $row['next_episode']       = $next !== null
+            $remaining                  = $this->remainingEpisodes($idUser, (int) $row['id_serie'], $idAppacmanLang);
+            $next                       = $remaining[0] ?? null;
+            $row['next_episode']        = $next !== null
                 ? sprintf('T%d - E%d', $next['season_number'], $next['episode_number'])
                 : null;
-            $row['remaining_episodes'] = count($remaining);
+            $row['next_episode_name']   = $next !== null
+                ? ($next['name'] ?: $next['default_name'])
+                : null;
+            $row['remaining_episodes']  = count($remaining);
         }
         unset($row);
 
@@ -183,14 +186,15 @@ class Watchlist extends Model
      * sound way to count only the specials that matter. Episodes not yet
      * aired are excluded too - nothing to "watch" yet.
      *
-     * @return array<int, array{season_number: int, episode_number: int}>
+     * @return array<int, array{season_number: int, episode_number: int, name: ?string, default_name: ?string}>
      */
-    private function remainingEpisodes(int $idUser, int $idSerie): array
+    private function remainingEpisodes(int $idUser, int $idSerie, int $idAppacmanLang): array
     {
         $sql    = '
-            SELECT e.season_number, e.episode_number
+            SELECT e.season_number, e.episode_number, e.default_name, el.name
             FROM episode e
             LEFT JOIN user_episode_watched w ON w.id_episode = e.id_episode AND w.id_user = :id_user
+            LEFT JOIN episode_lang el ON el.id_episode = e.id_episode AND el.id_appacman_lang = :id_appacman_lang
             WHERE e.id_serie = :id_serie
               AND e.season_number > 0
               AND e.aired IS NOT NULL AND e.aired <= CURDATE()
@@ -198,8 +202,9 @@ class Watchlist extends Model
             ORDER BY e.season_number ASC, e.episode_number ASC
         ';
         $params = array(
-            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie'         => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
         );
         return $this->mysql->query($sql, $params);
     }
