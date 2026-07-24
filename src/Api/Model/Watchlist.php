@@ -64,12 +64,16 @@ class Watchlist extends Model
     }
 
     /**
-     * series with at least one watched episode, most-recently-watched first
-     * (i.e. "continue watching") - not paginated, unlike listNotStarted():
-     * a personal tracker's in-progress list stays small by nature, so the
-     * extra page/hasMore surface isn't worth it here. $idAppacmanLang and
-     * the name/overview/image/next_episode/remaining_episodes treatment are
-     * the same as listNotStarted(), see that method's docblock
+     * series with at least one watched episode AND still something left to
+     * watch, most-recently-watched first (i.e. "continue watching") - a
+     * series the user has fully caught up on (remaining_episodes reaches 0)
+     * drops out of this list; it reappears on its own once a new episode
+     * airs, since remaining_episodes is computed fresh every call, not
+     * stored. Not paginated, unlike listNotStarted(): a personal tracker's
+     * in-progress list stays small by nature, so the extra page/hasMore
+     * surface isn't worth it here. $idAppacmanLang and the name/overview/
+     * image/next_episode/remaining_episodes treatment are the same as
+     * listNotStarted(), see that method's docblock
      */
     public function listWatching(int $idUser, int $idAppacmanLang): array
     {
@@ -89,8 +93,9 @@ class Watchlist extends Model
             'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
         );
         $rows   = $this->mysql->query($sql, $params);
+        $rows   = $this->finalizeRows($rows, $idUser, $idAppacmanLang);
 
-        return $this->finalizeRows($rows, $idUser, $idAppacmanLang);
+        return array_values(array_filter($rows, static fn(array $row): bool => $row['remaining_episodes'] > 0));
     }
 
     /**
