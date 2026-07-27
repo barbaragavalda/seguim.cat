@@ -29,6 +29,33 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     `Accept-Language` the `password/forgot` request itself happens to carry — a password-reset
     request is often made from an unfamiliar device, so the current request's own language can't
     be trusted to match the account's.
+  - **Profile editing** (this project's own code, `src/Api/Controller/Account/`, all requiring the
+    user's own token):
+
+    | Method | Path                          | Purpose                                              |
+    |--------|-------------------------------|--------------------------------------------------------|
+    | GET    | `/api/account`                | Current `username`/`email`/`language`                 |
+    | POST   | `/api/account/username`       | Rename (`username` - same pattern/uniqueness rule as register) |
+    | POST   | `/api/account/password`       | Change password (`current_password`, `new_password`)  |
+    | POST   | `/api/account/email`          | Request an email change (`email`) - see below         |
+    | POST   | `/api/account/email/confirm`  | Confirm it (`code`)                                    |
+    | POST   | `/api/account/language`       | Change the stored language (`language`, a culture code) |
+
+    `POST /account/password` revokes every other device's token afterwards (same reasoning as
+    `password/reset`: a changed password can mean the old one was known to someone it shouldn't
+    have been) but re-issues one for *this* session (returned as `token`), so the device making the
+    change isn't logged out for a change it just asked for itself.
+
+    `POST /account/email` only *requests* the change - it doesn't take effect until confirmed.
+    `Webservice\Model\EmailChange` (same shape as `PasswordReset`: 6-digit code, 15 min TTL, 5 max
+    attempts) stages the new address and emails a code there; `/account/email/confirm` only applies
+    it once that code is redeemed. Without this, a stolen or shared-device session token could
+    permanently hijack an account by pointing it at an attacker-controlled address with no proof it
+    was ever actually reachable. A heads-up notice also goes to the *current* email at request time,
+    in case the request itself wasn't legitimate. Uniqueness is checked both at request time and
+    again at confirm time (another account could take the exact same address during the 15-minute
+    window in between).
+
   - TV series tracking (this project's own code, `src/Api/{Controller,Model}/`):
 
     | Method | Path                        | Purpose                                              |
@@ -157,12 +184,12 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
      deliver reset codes (in dev, if this isn't set up yet, the code is logged via `error_log()`
      instead of failing the request - see `Webservice\Controller\ForgotPassword`)
 3. Create the database and import `db.sql` (Appacman's minimal schema + this project's own
-   `user`/`user_token`/`password_reset`/`serie`/`serie_lang`/`episode`/`episode_lang`/
-   `user_watchlist`/`user_episode_watched`/`tvtime_import` tables — no admin user seeded, see
-   below). **Careful re-importing this later**: `serie`/`serie_lang`/`episode`/`episode_lang` hold
-   the TheTVDB mirror cache, which can mean hundreds of shows re-fetched from scratch if wiped -
-   apply schema changes to those four tables with `ALTER TABLE` against the live database instead
-   of blindly re-running the whole file once real data exists.
+   `user`/`user_token`/`password_reset`/`email_change`/`serie`/`serie_lang`/`episode`/
+   `episode_lang`/`user_watchlist`/`user_episode_watched`/`tvtime_import` tables — no admin user
+   seeded, see below). **Careful re-importing this later**: `serie`/`serie_lang`/`episode`/
+   `episode_lang` hold the TheTVDB mirror cache, which can mean hundreds of shows re-fetched from
+   scratch if wiped - apply schema changes to those four tables with `ALTER TABLE` against the live
+   database instead of blindly re-running the whole file once real data exists.
 4. Set up the local vhost pointing `DocumentRoot` to `web/`.
 
 ## First admin user
@@ -207,15 +234,19 @@ assign (usually `1` for the first user).
 - `web/` - served document root (front controllers, `.htaccess`, `static/`, `upload/`)
 - `src/Web/` - public site controllers/views (placeholder, not the real product)
 - `src/Api/` - the tracking backend: `Controller/{Series,Watchlist,Episode,Account,Import}/`
-  (routes - `Account/Delete.php` overrides `freimguork-webservice`'s own `DELETE /account`, see
-  above; `Import/{TvTime,TvTimeStatus,TvTimeProcess}.php` are the TV Time importer's upload/poll/
-  cron-tick endpoints, see above), `Model/{Series,SerieLang,Episode,EpisodeLang,Watchlist,
-  WatchedEpisode,TvTimeImport}.php` (local mirror + user state + import job tracking),
-  `Model/TvTimeImport/{Parser,Processor}.php` (export parsing + applying a batch to a real
-  account), `Model/TheTvdb/{Client,Languages}.php` (TheTVDB v4 HTTP client - does its own plain
-  `curl_init()` call rather than `Core\Model\Utils\Curl`, which forces every request through a
-  bogus local proxy in dev mode and breaks real third-party calls; `Languages` maps this project's
-  own `id_appacman_lang` to TheTVDB's 3-letter language codes, shared by `SerieLang`/`EpisodeLang`)
+  (routes - `Account/{Get,UpdateUsername,ChangePassword,UpdateEmail,ConfirmEmailChange,
+  UpdateLanguage,Delete}.php` are the profile-editing endpoints, `Delete.php` also overriding
+  `freimguork-webservice`'s own `DELETE /account` (see above); `Import/{TvTime,TvTimeStatus,
+  TvTimeProcess}.php` are the TV Time importer's upload/poll/cron-tick endpoints, see above),
+  `Model/{Series,SerieLang,Episode,EpisodeLang,Watchlist,WatchedEpisode,TvTimeImport}.php` (local
+  mirror + user state + import job tracking), `Model/TvTimeImport/{Parser,Processor}.php` (export
+  parsing + applying a batch to a real account), `Model/TheTvdb/{Client,Languages}.php` (TheTVDB v4
+  HTTP client - does its own plain `curl_init()` call rather than `Core\Model\Utils\Curl`, which
+  forces every request through a bogus local proxy in dev mode and breaks real third-party calls;
+  `Languages` maps this project's own `id_appacman_lang` to TheTVDB's 3-letter language codes,
+  shared by `SerieLang`/`EpisodeLang`). `Webservice\Model\{User,UserToken,PasswordReset,
+  EmailChange}` (profile/auth logic reusable by other consuming apps) live in the shared
+  `freimguork-webservice` package instead, not here.
 - `src/cache/` - compiled route cache in prod, the TheTVDB bearer-token cache
   (`src/cache/{dev,prod}/thetvdb/token.json`), and uploaded TV Time exports/their extracted CSVs
   while a job is in progress (`src/cache/{dev,prod}/imports/`) - all gitignored, created

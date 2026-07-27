@@ -7,6 +7,7 @@ use Api\Model\TvTimeImport;
 use Api\Model\WatchedEpisode;
 use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
+use Webservice\Model\EmailChange;
 use Webservice\Model\User;
 use Webservice\Model\UserToken;
 
@@ -31,6 +32,7 @@ class Delete extends Controller
         (new Watchlist())->removeAllForUser($userID);
         (new WatchedEpisode())->removeAllForUser($userID);
         (new TvTimeImport())->removeAllForUser($userID);
+        (new EmailChange())->deleteForUser($userID);
         (new User())->delete($userID);
     }
 

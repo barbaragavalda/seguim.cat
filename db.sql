@@ -616,6 +616,29 @@ CREATE TABLE `password_reset` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
+-- Table structure for email_change (Webservice\Model\EmailChange - a
+-- pending change-of-email request, confirmed via a code sent to the *new*
+-- address, same 6-digit/15-min/5-attempts shape as password_reset - see
+-- Api\Controller\Account\{UpdateEmail,ConfirmEmailChange})
+-- ----------------------------
+DROP TABLE IF EXISTS `email_change`;
+CREATE TABLE `email_change` (
+  `id_email_change` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  -- deliberately plain, unlike user.email (TwoWay-encrypted) - a short-
+  -- lived (15 min), single-use, soon-deleted staging value, not the
+  -- account's permanent record
+  `new_email` varchar(255) NOT NULL,
+  -- SHA-256 hash of the 6-digit code, same reasoning as user_token.token
+  `code` varchar(64) NOT NULL,
+  `attempts` tinyint(3) unsigned NOT NULL DEFAULT 0,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` timestamp NOT NULL,
+  PRIMARY KEY (`id_email_change`) USING BTREE,
+  KEY `id_user` (`id_user`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
 -- Table structure for tvtime_import (background job tracking for the TV
 -- Time GDPR-export importer - see Api\Controller\Import\*. Processed by a
 -- separate cron-triggered endpoint rather than inline in the upload
