@@ -5,6 +5,7 @@ namespace Api\Controller\Episode;
 use Api\Controller\Controller;
 use Api\Model\Episode;
 use Api\Model\WatchedEpisode;
+use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
 
 #[Route('/episode/{tvdbId}/watched', methods: ['POST'], name: 'api.episode.watch', requirements: ['tvdbId' => '\d+'])]
@@ -22,6 +23,12 @@ class Watch extends Controller
             $this->error = '404';
             return;
         }
+
+        // marking an episode watched implies the user is following this
+        // series, even if they never explicitly hit "+ Watchlist" first -
+        // add() is an INSERT IGNORE, so this is a no-op (and doesn't touch
+        // the archived/removed flags) when the series is already there
+        (new Watchlist())->add($this->user->getID(), $episode->getInfo()['id_serie']);
 
         (new WatchedEpisode())->markWatched($this->user->getID(), $episode->getInfo()['id_episode']);
     }

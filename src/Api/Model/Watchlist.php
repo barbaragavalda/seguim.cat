@@ -142,6 +142,38 @@ class Watchlist extends Model
     }
 
     /**
+     * used by Api\Controller\Series\Detail so the series detail screen can
+     * show the archived/removed toggles in their current state, not just
+     * the plain in-watchlist flag has() gives - a row not in the watchlist
+     * at all comes back as every flag false, same as a fresh/never-added
+     * series, rather than null/missing
+     *
+     * @return array{inWatchlist: bool, archived: bool, removed: bool}
+     */
+    public function getFlags(int $idUser, int $idSerie): array
+    {
+        $sql    = '
+            SELECT archived, removed
+            FROM user_watchlist
+            WHERE id_user = :id_user AND id_serie = :id_serie
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+        );
+        $rows   = $this->mysql->query($sql, $params);
+        if (count($rows) === 0) {
+            return array('inWatchlist' => false, 'archived' => false, 'removed' => false);
+        }
+        return array(
+            'inWatchlist' => true,
+            'archived'    => (bool) $rows[0]['archived'],
+            'removed'     => (bool) $rows[0]['removed'],
+        );
+    }
+
+    /**
      * series with at least one watched episode AND still something left to
      * watch, most-recently-watched first (i.e. "continue watching") - a
      * series the user has fully caught up on (remaining_episodes reaches 0)
@@ -216,19 +248,21 @@ class Watchlist extends Model
         return $this->finalizePage($rows, $idUser, $idAppacmanLang);
     }
 
-    private const array STATUSES = array('removed', 'archived', 'watching', 'not_started', 'finished');
+    private const array STATUSES = array('all', 'removed', 'archived', 'watching', 'not_started', 'finished');
 
     /**
      * unified, paginated "browse everything" view (for a profile-style
      * screen) - unlike listWatching()/listNotStarted() above, every status
      * here is paginated, since archived/removed/finished can easily
      * accumulate hundreds of rows (a TV Time import commonly does). The 5
-     * statuses partition every possible (archived, removed, watched vs.
-     * remaining) combination exactly once - `removed` wins over `archived`
-     * when a series is somehow flagged as both (confirmed with the user:
-     * "removed" is the more definitive state). $search, when given,
-     * further filters by title (translated name, falling back to
-     * default_name same as everywhere else) - a simple `LIKE`, no
+     * non-`all` statuses partition every possible (archived, removed,
+     * watched vs. remaining) combination exactly once - `removed` wins over
+     * `archived` when a series is somehow flagged as both (confirmed with
+     * the user: "removed" is the more definitive state). `all` is the 6th,
+     * unfiltered status - every row in the user's watchlist regardless of
+     * those flags, same ordering (`w.created DESC`) as the others. $search,
+     * when given, further filters by title (translated name, falling back
+     * to default_name same as everywhere else) - a simple `LIKE`, no
      * full-text index, matching this app's personal-tracker scale
      *
      * @return array{results: array, hasMore: bool}
@@ -263,6 +297,15 @@ class Watchlist extends Model
             : '';
 
         $sql = match ($status) {
+            'all'      => '
+                SELECT s.*, sl.name, sl.overview
+                FROM user_watchlist w
+                INNER JOIN serie s ON s.id_serie = w.id_serie
+                LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+                WHERE w.id_user = :id_user' . $searchCondition . '
+                ORDER BY w.created DESC
+                LIMIT :limit OFFSET :offset
+            ',
             'removed'  => '
                 SELECT s.*, sl.name, sl.overview
                 FROM user_watchlist w

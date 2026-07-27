@@ -82,12 +82,15 @@ class Detail extends Controller
         }
         unset($episode);
 
+        $flags = $this->user !== null
+            ? (new Watchlist())->getFlags($this->user->getID(), $info['id_serie'])
+            : array('inWatchlist' => false, 'archived' => false, 'removed' => false);
+
         $this->assign('series', $info);
         $this->assign('episodes', $episodeRows);
-        $this->assign(
-            'in_watchlist',
-            $this->user !== null && (new Watchlist())->has($this->user->getID(), $info['id_serie'])
-        );
+        $this->assign('in_watchlist', $flags['inWatchlist']);
+        $this->assign('archived', $flags['archived']);
+        $this->assign('removed', $flags['removed']);
     }
 
 }
