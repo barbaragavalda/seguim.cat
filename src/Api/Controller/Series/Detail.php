@@ -52,8 +52,12 @@ class Detail extends Controller
         // $this->user is null for an anonymous request (default_token, no
         // real user logged in) - series detail itself is public, only the
         // per-user watched/watchlist flags need a real user
-        $watchedIds = $this->user !== null
-            ? (new WatchedEpisode())->watchedEpisodeIds($this->user->getID(), $info['id_serie'])
+        $watchedEpisode = new WatchedEpisode();
+        $watchedIds     = $this->user !== null
+            ? $watchedEpisode->watchedEpisodeIds($this->user->getID(), $info['id_serie'])
+            : [];
+        $watchCounts    = $this->user !== null
+            ? $watchedEpisode->watchCounts($this->user->getID(), $info['id_serie'])
             : [];
 
         // Config::getLanguage() is already resolved per-request (Accept-
@@ -75,7 +79,8 @@ class Detail extends Controller
         // above, per episode
         $episodeTranslations = (new EpisodeLang())->syncForSerieAndLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
         foreach ($episodeRows as &$episode) {
-            $episode['watched']  = in_array($episode['id_episode'], $watchedIds, true);
+            $episode['watched']     = in_array($episode['id_episode'], $watchedIds, true);
+            $episode['watch_count'] = $watchCounts[$episode['id_episode']] ?? 0;
             $episodeTranslation  = $episodeTranslations[$episode['id_episode']] ?? array('name' => null, 'overview' => null);
             $episode['name']     = $episodeTranslation['name'] ?: $episode['default_name'];
             $episode['overview'] = $episodeTranslation['overview'] ?: $episode['default_overview'];

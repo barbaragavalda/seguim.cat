@@ -71,8 +71,10 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     | DELETE | `/api/watchlist/{tvdbId}/archived` | Unarchive it                                   |
     | POST   | `/api/watchlist/{tvdbId}/removed` | Mark a series removed (hidden from both lists, not deleted) |
     | DELETE | `/api/watchlist/{tvdbId}/removed` | Restore it                                      |
-    | POST   | `/api/episode/{tvdbId}/watched` | Mark an episode watched                            |
-    | DELETE | `/api/episode/{tvdbId}/watched` | Mark an episode unwatched                          |
+    | POST   | `/api/episode/{tvdbId}/watched` | Mark an episode watched - a no-op if already watched (see below) |
+    | DELETE | `/api/episode/{tvdbId}/watched` | Mark an episode unwatched (a full reset - see below)   |
+    | POST   | `/api/episode/{tvdbId}/rewatch` | Record another watch, even if already watched          |
+    | DELETE | `/api/episode/{tvdbId}/rewatch` | Collapse back down to a single watch (undo any rewatches, not a full reset - see below) |
     | POST   | `/api/import/tvtime`        | Upload a TV Time GDPR data export (`multipart/form-data`, field `file`), queues an import job |
     | GET    | `/api/import/tvtime/{id}`   | Poll an import job's status/summary                    |
     | POST   | `/api/import/tvtime/process` | Works through one batch of the oldest queued import job - see below |
@@ -80,6 +82,16 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     Every request needs an `Authorization` header: the app's own shared secret
     (`config/api/{dev,prod}/webservice.php`) on `register`/`login`/`import/tvtime/process`, the
     user's own token (returned by `register`/`login`) on everything else.
+
+    `user_episode_watched` holds one row per *watch event*, not one per episode - rewatching adds
+    another row rather than updating an existing one, so both the total count and each event's own
+    date survive. `watched`/`watch_count` on `series/{tvdbId}`'s episode list reflect this
+    (`watch_count` is just `0` for never-watched). `/watched` (`POST`/`DELETE`) is unchanged from a
+    caller's perspective - `POST` stays a no-op once already watched, `DELETE` still fully resets an
+    episode back to never-watched. `/rewatch` is the pair that manages watch events beyond the
+    first: `POST` always adds a new one regardless of what's already there, `DELETE` collapses
+    every event for that episode back down to just the earliest one - "undo my rewatches, but keep
+    it watched once" - distinct from `DELETE /watched`'s full reset to zero.
 
     Series/episode metadata is **lazily mirrored**: TheTVDB is only called (and the result cached
     into the local `serie`/`episode` tables, refreshed after 24h) the first time a user actually
@@ -144,6 +156,14 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     than one file) rather than stamping everything with the import time, so the watchlist's own
     date-ordered views stay meaningful for imported data too.
 
+    `rewatched_episode.csv` is parsed separately into its own `rewatches` structure rather than
+    folded into the union above - confirmed empirically it's a *count* of extra watches beyond the
+    first (`cpt`, always 1 or 2, never more than one row per episode), not a discrete per-event
+    log, so the importer records `cpt` additional `WatchedEpisode::markRewatched()` events (all
+    stamped with the same single date the export provides - individual rewatch dates aren't
+    recoverable) on top of whatever base watch the union above already found, applied even when
+    that base watch wasn't found at all (TV Time's own count still means something either way).
+
     Syncing a full history (frequently 900+ shows) reliably outlasts Apache's own 60s reverse-proxy
     timeout - confirmed against a real export - so `POST /import/tvtime` only stores the upload and
     queues a job; `POST /import/tvtime/process` (meant to be pinged repeatedly by a system cron -
@@ -151,7 +171,8 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     sub-project convention) works through one ~45s batch of the oldest queued/in-progress job per
     call, persisting which shows are already done (`tvtime_import.processed_show_ids`) so the next
     call resumes rather than restarting. `GET /import/tvtime/{id}` polls a job's `status`
-    (`pending`/`processing`/`done`/`failed`) and `summary` (shows synced/failed, episodes watched).
+    (`pending`/`processing`/`done`/`failed`) and `summary` (shows synced/failed, episodes watched/
+    rewatched).
 
     A show still followed in TV Time but archived there sets `user_watchlist.archived`; one with
     watch history but no longer followed at all (unfollowed/deleted) sets `.removed` instead - both

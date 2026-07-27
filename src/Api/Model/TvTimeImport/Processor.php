@@ -34,7 +34,8 @@ final class Processor
     /**
      * @param array{
      *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
-     *     watched: array<int, array<int, string>>
+     *     watched: array<int, array<int, string>>,
+     *     rewatches: array<int, array<int, array{cpt: int, at: string}>>
      * } $parsed
      * @param array<int> $alreadyDone show ids a previous batch already handled
      * @return array{
@@ -42,6 +43,7 @@ final class Processor
      *     shows_synced: int,
      *     shows_failed: array<int>,
      *     episodes_watched: int,
+     *     episodes_rewatched: int,
      *     finished: bool
      * }
      */
@@ -52,11 +54,12 @@ final class Processor
         $watchlist      = new Watchlist();
         $watchedEpisode = new WatchedEpisode();
 
-        $doneShowIds     = array();
-        $showsSynced     = 0;
-        $showsFailed     = array();
-        $episodesWatched = 0;
-        $finished        = true;
+        $doneShowIds       = array();
+        $showsSynced       = 0;
+        $showsFailed       = array();
+        $episodesWatched   = 0;
+        $episodesRewatched = 0;
+        $finished          = true;
 
         foreach ($parsed['shows'] as $tvdbSeriesId => $flags) {
             if (in_array($tvdbSeriesId, $alreadyDone, true)) {
@@ -92,15 +95,32 @@ final class Processor
                 $episodesWatched++;
             }
 
+            // applied regardless of whether a base "first watch" was found
+            // above for the same episode - TV Time's own cpt still means
+            // "watched this many extra times", even when the export's
+            // per-episode logs never captured the very first watch (see
+            // Parser's own docblock on that gap)
+            foreach ($parsed['rewatches'][$tvdbSeriesId] ?? array() as $tvdbEpisodeId => $rewatch) {
+                $idEpisode = $idEpisodeByTvdbId[$tvdbEpisodeId] ?? null;
+                if ($idEpisode === null) {
+                    continue;
+                }
+                for ($i = 0; $i < $rewatch['cpt']; $i++) {
+                    $watchedEpisode->markRewatched($idUser, (int) $idEpisode, $rewatch['at']);
+                    $episodesRewatched++;
+                }
+            }
+
             $doneShowIds[] = $tvdbSeriesId;
         }
 
         return array(
-            'done_show_ids'    => $doneShowIds,
-            'shows_synced'     => $showsSynced,
-            'shows_failed'     => $showsFailed,
-            'episodes_watched' => $episodesWatched,
-            'finished'         => $finished,
+            'done_show_ids'       => $doneShowIds,
+            'shows_synced'        => $showsSynced,
+            'shows_failed'        => $showsFailed,
+            'episodes_watched'    => $episodesWatched,
+            'episodes_rewatched'  => $episodesRewatched,
+            'finished'            => $finished,
         );
     }
 

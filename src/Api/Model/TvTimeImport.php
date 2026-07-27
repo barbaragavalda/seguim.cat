@@ -126,8 +126,8 @@ class TvTimeImport extends Model
      * one batch of one job is ever processed at a time (no concurrent
      * writers to race against)
      *
-     * @param array<int>                                                                  $newDoneShowIds
-     * @param array{shows_synced: int, shows_failed: array<int>, episodes_watched: int}    $summaryDelta
+     * @param array<int>                                                                                              $newDoneShowIds
+     * @param array{shows_synced: int, shows_failed: array<int>, episodes_watched: int, episodes_rewatched: int}      $summaryDelta
      */
     public function recordBatch(int $id, array $newDoneShowIds, array $summaryDelta): void
     {
@@ -143,11 +143,12 @@ class TvTimeImport extends Model
 
         $summary          = !empty($job['summary'])
             ? json_decode($job['summary'], true)
-            : array('shows_synced' => 0, 'shows_failed' => array(), 'episodes_watched' => 0);
+            : array('shows_synced' => 0, 'shows_failed' => array(), 'episodes_watched' => 0, 'episodes_rewatched' => 0);
         $mergedSummary     = array(
-            'shows_synced'     => $summary['shows_synced'] + $summaryDelta['shows_synced'],
-            'shows_failed'     => array_values(array_unique(array_merge($summary['shows_failed'], $summaryDelta['shows_failed']))),
-            'episodes_watched' => $summary['episodes_watched'] + $summaryDelta['episodes_watched'],
+            'shows_synced'       => $summary['shows_synced'] + $summaryDelta['shows_synced'],
+            'shows_failed'       => array_values(array_unique(array_merge($summary['shows_failed'], $summaryDelta['shows_failed']))),
+            'episodes_watched'   => $summary['episodes_watched'] + $summaryDelta['episodes_watched'],
+            'episodes_rewatched' => ($summary['episodes_rewatched'] ?? 0) + $summaryDelta['episodes_rewatched'],
         );
 
         $sql    = '

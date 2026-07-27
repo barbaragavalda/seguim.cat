@@ -583,15 +583,21 @@ CREATE TABLE `user_watchlist` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for user_episode_watched (presence = watched; DELETE = unwatched)
+-- Table structure for user_episode_watched (one row per watch event, not
+-- per episode - a rewatch adds another row rather than updating the
+-- existing one, so watch history/count survives. WatchedEpisode::
+-- markWatched() stays idempotent (checks first) for plain "mark watched";
+-- markRewatched() always inserts. DELETE (markUnwatched) removes every row
+-- for that episode - a full reset, not "undo one rewatch")
 -- ----------------------------
 DROP TABLE IF EXISTS `user_episode_watched`;
 CREATE TABLE `user_episode_watched` (
+  `id_user_episode_watched` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_episode` mediumint(8) unsigned NOT NULL,
   `watched_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_user`, `id_episode`) USING BTREE,
-  KEY `id_episode` (`id_episode`)
+  PRIMARY KEY (`id_user_episode_watched`) USING BTREE,
+  KEY `id_user_episode` (`id_user`, `id_episode`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------

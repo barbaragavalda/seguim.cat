@@ -66,9 +66,10 @@ class TvTimeProcess extends Controller
             $batch       = (new Processor($this->client))->processBatch((int) $job['id_user'], $parsed, $alreadyDone);
 
             $importModel->recordBatch($id, $batch['done_show_ids'], array(
-                'shows_synced'     => $batch['shows_synced'],
-                'shows_failed'     => $batch['shows_failed'],
-                'episodes_watched' => $batch['episodes_watched'],
+                'shows_synced'       => $batch['shows_synced'],
+                'shows_failed'       => $batch['shows_failed'],
+                'episodes_watched'   => $batch['episodes_watched'],
+                'episodes_rewatched' => $batch['episodes_rewatched'],
             ));
 
             if ($batch['finished']) {

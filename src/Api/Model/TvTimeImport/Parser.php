@@ -16,12 +16,18 @@ use Generator;
  * cross-checking against user_tv_show_data.csv's own nb_episodes_seen
  * count per show (e.g. Twin Peaks: 48). The union of WATCH_LOG_FILES plus
  * tracking-prod-records(.csv|-v2.csv)'s per-episode "watch" events recovers
- * 97.3% of all watched episodes (88% of shows exactly) - rewatched_episode.csv
- * is deliberately excluded (would double-count with the others; not the
- * "did I ever watch this" signal this importer cares about). What's still
+ * 97.3% of all watched episodes (88% of shows exactly). What's still
  * missing (mostly very old history TV Time itself never logged
  * per-episode) simply isn't imported - there's no reliable way to guess
  * *which* specific episodes those were.
+ *
+ * rewatched_episode.csv is parsed separately, into `rewatches` rather than
+ * folded into `watched` - it's a *count* of extra watches beyond the
+ * first (`cpt`, confirmed empirically: every row is a distinct episode_id,
+ * never repeated, with values only ever 1 or 2), not a discrete per-event
+ * log, and TheTVDB's own episode_id already tells the processor which
+ * episode is *first* watched via `watched` - conflating the two would
+ * double-count.
  *
  * Every source file carries its own `created_at` - preserved here (rather
  * than letting the importer stamp everything with "now") so the app's own
@@ -50,7 +56,8 @@ final class Parser
     /**
      * @return array{
      *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
-     *     watched: array<int, array<int, string>>
+     *     watched: array<int, array<int, string>>,
+     *     rewatches: array<int, array<int, array{cpt: int, at: string}>>
      * }
      */
     public function parse(string $dir): array
@@ -64,19 +71,21 @@ final class Parser
             $this->mergeNamedWatchLog($dir . '/' . $file, $nameToId, $watched);
         }
 
+        $rewatches = $this->parseRewatches($dir . '/rewatched_episode.csv', $nameToId);
+
         // a show with watch history but no row in followed_tv_show.csv at
         // all was unfollowed/deleted in TVTime at some point - still worth
         // importing the history, just flagged so it doesn't show up as an
         // active watchlist entry. No follow date survives for these (the
         // row itself is gone), so created_at is left null - the importer
         // falls back to "now" for those specifically.
-        foreach (array_keys($watched) as $tvdbId) {
+        foreach (array_unique(array_merge(array_keys($watched), array_keys($rewatches))) as $tvdbId) {
             if (!isset($shows[$tvdbId])) {
                 $shows[$tvdbId] = array('archived' => false, 'removed' => true, 'created_at' => null);
             }
         }
 
-        return array('shows' => $shows, 'watched' => $watched);
+        return array('shows' => $shows, 'watched' => $watched, 'rewatches' => $rewatches);
     }
 
     /**
@@ -156,6 +165,29 @@ final class Parser
             }
             $this->recordWatch($watched, $tvdbId, $episodeId, $row['created_at'] ?? null);
         }
+    }
+
+    /**
+     * @param array<string, int> $nameToId
+     * @return array<int, array<int, array{cpt: int, at: string}>>
+     */
+    private function parseRewatches(string $path, array $nameToId): array
+    {
+        $rewatches = array();
+        foreach ($this->readCsv($path) as $row) {
+            $tvdbId    = $nameToId[$row['tv_show_name'] ?? ''] ?? null;
+            $episodeId = (int) ($row['episode_id'] ?? 0);
+            $cpt       = (int) ($row['cpt'] ?? 0);
+            if ($tvdbId === null || $episodeId === 0 || $cpt <= 0) {
+                continue;
+            }
+            $rewatches[$tvdbId][$episodeId] = array(
+                'cpt' => $cpt,
+                'at'  => ($row['created_at'] ?? '') !== '' ? $row['created_at'] : date('Y-m-d H:i:s'),
+            );
+        }
+
+        return $rewatches;
     }
 
     /**
