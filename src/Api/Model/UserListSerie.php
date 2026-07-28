@@ -71,6 +71,29 @@ class UserListSerie extends Model
     }
 
     /**
+     * which of $idUser's own lists already contain $idSerie - for the
+     * "add to a list" picker (Lists\Membership). Scoped through user_list's
+     * own id_user rather than trusting a bare id_user_list list, same
+     * ownership-check reasoning as everywhere else in this feature.
+     *
+     * @return int[] id_user_list values
+     */
+    public function listIdsContainingSerie(int $idUser, int $idSerie): array
+    {
+        $sql    = '
+            SELECT uls.id_user_list
+            FROM user_list_serie uls
+            INNER JOIN user_list ul ON ul.id_user_list = uls.id_user_list
+            WHERE ul.id_user = :id_user AND uls.id_serie = :id_serie
+        ';
+        $params = array(
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+        );
+        return array_map('intval', array_column($this->mysql->query($sql, $params), 'id_user_list'));
+    }
+
+    /**
      * @return array{results: array, hasMore: bool}
      */
     public function listForList(int $idUserList, int $page): array

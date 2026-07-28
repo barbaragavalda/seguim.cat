@@ -109,6 +109,23 @@ class UserList extends Model
     }
 
     /**
+     * every list of $idUser's, unpaginated - for the "which of my lists is
+     * this series already in" picker (Lists\Membership), which needs the
+     * full set to render its checkboxes rather than one page at a time
+     */
+    public function allForUser(int $idUser): array
+    {
+        $sql    = '
+            SELECT *
+            FROM user_list
+            WHERE id_user = :id_user
+            ORDER BY ordering ASC
+        ';
+        $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
+        return $this->mysql->query($sql, $params);
+    }
+
+    /**
      * @return array{results: array, hasMore: bool}
      */
     public function listForUser(int $idUser, int $page): array

@@ -203,6 +203,7 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     | POST   | `/api/lists/{id}/series/{tvdbId}`         | Add a series (lazy-mirrors it first, like watchlist add) |
     | DELETE | `/api/lists/{id}/series/{tvdbId}`         | Remove a series                           |
     | POST   | `/api/lists/{id}/series/{tvdbId}/reorder` | Move it within the list - see below       |
+    | GET    | `/api/lists/membership/{tvdbId}`          | Every one of the user's lists, each flagged `in_list` - backs the client's multi-list "add to a list" picker |
 
     Every list-scoped route checks `UserList::belongsToUser()` first and returns a plain `404` if
     the list isn't the caller's - prevents cross-account tampering via a guessed id, same pattern
