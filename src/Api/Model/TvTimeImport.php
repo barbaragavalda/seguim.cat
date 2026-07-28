@@ -121,45 +121,64 @@ class TvTimeImport extends Model
     }
 
     /**
-     * merges this batch's newly-done show ids and summary counts into
-     * whatever's already recorded - read-then-write is fine here since only
-     * one batch of one job is ever processed at a time (no concurrent
+     * @return array<string>
+     */
+    public function getProcessedListKeys(array $job): array
+    {
+        return !empty($job['processed_list_keys']) ? json_decode($job['processed_list_keys'], true) : array();
+    }
+
+    /**
+     * merges this batch's newly-done show ids/list keys and summary counts
+     * into whatever's already recorded - read-then-write is fine here since
+     * only one batch of one job is ever processed at a time (no concurrent
      * writers to race against)
      *
-     * @param array<int>                                                                                              $newDoneShowIds
-     * @param array{shows_synced: int, shows_failed: array<int>, episodes_watched: int, episodes_rewatched: int}      $summaryDelta
+     * @param array<int>    $newDoneShowIds
+     * @param array<string> $newDoneListKeys
+     * @param array{
+     *     shows_synced: int, shows_failed: array<int>, episodes_watched: int, episodes_rewatched: int,
+     *     lists_created: int, list_series_added: int
+     * } $summaryDelta
      */
-    public function recordBatch(int $id, array $newDoneShowIds, array $summaryDelta): void
+    public function recordBatch(int $id, array $newDoneShowIds, array $newDoneListKeys, array $summaryDelta): void
     {
         $sql    = '
-            SELECT processed_show_ids, summary
+            SELECT processed_show_ids, processed_list_keys, summary
             FROM tvtime_import
             WHERE id_tvtime_import = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
         $job    = $this->mysql->query($sql, $params)[0] ?? array();
 
-        $mergedIds = array_values(array_unique(array_merge($this->getProcessedShowIds($job), $newDoneShowIds)));
+        $mergedShowIds  = array_values(array_unique(array_merge($this->getProcessedShowIds($job), $newDoneShowIds)));
+        $mergedListKeys = array_values(array_unique(array_merge($this->getProcessedListKeys($job), $newDoneListKeys)));
 
-        $summary          = !empty($job['summary'])
+        $summary       = !empty($job['summary'])
             ? json_decode($job['summary'], true)
-            : array('shows_synced' => 0, 'shows_failed' => array(), 'episodes_watched' => 0, 'episodes_rewatched' => 0);
-        $mergedSummary     = array(
+            : array(
+                'shows_synced' => 0, 'shows_failed' => array(), 'episodes_watched' => 0, 'episodes_rewatched' => 0,
+                'lists_created' => 0, 'list_series_added' => 0,
+            );
+        $mergedSummary = array(
             'shows_synced'       => $summary['shows_synced'] + $summaryDelta['shows_synced'],
             'shows_failed'       => array_values(array_unique(array_merge($summary['shows_failed'], $summaryDelta['shows_failed']))),
             'episodes_watched'   => $summary['episodes_watched'] + $summaryDelta['episodes_watched'],
             'episodes_rewatched' => ($summary['episodes_rewatched'] ?? 0) + $summaryDelta['episodes_rewatched'],
+            'lists_created'      => ($summary['lists_created'] ?? 0) + $summaryDelta['lists_created'],
+            'list_series_added'  => ($summary['list_series_added'] ?? 0) + $summaryDelta['list_series_added'],
         );
 
         $sql    = '
             UPDATE tvtime_import
-            SET processed_show_ids = :ids, summary = :summary
+            SET processed_show_ids = :show_ids, processed_list_keys = :list_keys, summary = :summary
             WHERE id_tvtime_import = :id
         ';
         $params = array(
-            'id'      => array('value' => $id, 'type' => PDO::PARAM_INT),
-            'ids'     => array('value' => json_encode($mergedIds), 'type' => PDO::PARAM_STR),
-            'summary' => array('value' => json_encode($mergedSummary), 'type' => PDO::PARAM_STR),
+            'id'        => array('value' => $id, 'type' => PDO::PARAM_INT),
+            'show_ids'  => array('value' => json_encode($mergedShowIds), 'type' => PDO::PARAM_STR),
+            'list_keys' => array('value' => json_encode($mergedListKeys), 'type' => PDO::PARAM_STR),
+            'summary'   => array('value' => json_encode($mergedSummary), 'type' => PDO::PARAM_STR),
         );
         $this->mysql->query($sql, $params);
     }

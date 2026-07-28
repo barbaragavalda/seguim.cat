@@ -36,6 +36,17 @@ use Generator;
  * data instead of every row tying for the same import timestamp. When the
  * same episode appears in more than one source with different timestamps,
  * the earliest one wins - the first time it was genuinely marked watched.
+ *
+ * lists-prod-lists.csv's own `objects` column isn't valid JSON - it's TV
+ * Time's backend printing a Go `[]map[string]any` with `fmt.Sprint()`
+ * (`"[map[created_at:1.7e+09 id:123 type:series] map[...] ...]"`), parsed
+ * here with a regex rather than json_decode() (confirmed empirically: 446
+ * objects across the real export's 27 lists, zero mismatches against a raw
+ * substring count of "map["). Movie entries (no TheTVDB series id, only an
+ * opaque `uuid`) are skipped - out of scope, same as everywhere else in
+ * this app. Each object's own `created_at` is a Unix timestamp (unlike
+ * every other file's plain datetime string) since that's how TV Time's own
+ * backend serialized it.
  */
 final class Parser
 {
@@ -57,7 +68,8 @@ final class Parser
      * @return array{
      *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
      *     watched: array<int, array<int, string>>,
-     *     rewatches: array<int, array<int, array{cpt: int, at: string}>>
+     *     rewatches: array<int, array<int, array{cpt: int, at: string}>>,
+     *     lists: array<string, array{name: string, created_at: string, series: array<int, string>}>
      * }
      */
     public function parse(string $dir): array
@@ -72,6 +84,7 @@ final class Parser
         }
 
         $rewatches = $this->parseRewatches($dir . '/rewatched_episode.csv', $nameToId);
+        $lists     = $this->parseLists($dir . '/lists-prod-lists.csv');
 
         // a show with watch history but no row in followed_tv_show.csv at
         // all was unfollowed/deleted in TVTime at some point - still worth
@@ -85,7 +98,7 @@ final class Parser
             }
         }
 
-        return array('shows' => $shows, 'watched' => $watched, 'rewatches' => $rewatches);
+        return array('shows' => $shows, 'watched' => $watched, 'rewatches' => $rewatches, 'lists' => $lists);
     }
 
     /**
@@ -188,6 +201,83 @@ final class Parser
         }
 
         return $rewatches;
+    }
+
+    /**
+     * @return array<string, array{name: string, created_at: string, series: array<int, string>}>
+     */
+    private function parseLists(string $path): array
+    {
+        $lists = array();
+        foreach ($this->readCsv($path) as $row) {
+            $sKey = $row['s_key'] ?? '';
+            if ($sKey === '' || ($row['type'] ?? '') !== 'list') {
+                continue;
+            }
+
+            $series = array();
+            foreach ($this->parseListObjects($row['objects'] ?? '') as $object) {
+                $tvdbId = (int) ($object['id'] ?? 0);
+                if (($object['type'] ?? '') !== 'series' || $tvdbId === 0) {
+                    continue;
+                }
+                // per-item created_at is a Unix timestamp here, unlike the
+                // list's own created_at column just below (a plain
+                // datetime string, same as every other file)
+                $series[$tvdbId] = isset($object['created_at'])
+                    ? date('Y-m-d H:i:s', (int) (float) $object['created_at'])
+                    : date('Y-m-d H:i:s');
+            }
+            if (empty($series)) {
+                // movies-only (out of scope) or genuinely empty - nothing
+                // importable, don't create a pointless blank list
+                continue;
+            }
+
+            $createdAt = ($row['created_at'] ?? '') !== '' ? $row['created_at'] : date('Y-m-d H:i:s');
+            $name      = trim($row['name'] ?? '');
+            if ($name === '') {
+                // most of a real export's lists turn out to be nameless -
+                // confirmed empirically (23 of 27) - likely TV Time's own
+                // auto-generated buckets rather than something the user
+                // named themselves, but still worth importing (user's own
+                // call) with a placeholder rather than silently blank
+                $name = 'List from ' . substr($createdAt, 0, 10);
+            }
+
+            $lists[$sKey] = array('name' => $name, 'created_at' => $createdAt, 'series' => $series);
+        }
+
+        return $lists;
+    }
+
+    /**
+     * parses TV Time's own Go `fmt.Sprint()` formatting of a
+     * `[]map[string]any` - see this class's own docblock for why this
+     * isn't just json_decode()
+     *
+     * @return array<int, array<string, string>>
+     */
+    private function parseListObjects(string $raw): array
+    {
+        if (!preg_match_all('/map\[([^\]]*)\]/', $raw, $matches)) {
+            return array();
+        }
+
+        $objects = array();
+        foreach ($matches[1] as $segment) {
+            $object = array();
+            foreach (explode(' ', $segment) as $token) {
+                if (!str_contains($token, ':')) {
+                    continue;
+                }
+                [$key, $value] = explode(':', $token, 2);
+                $object[$key]  = $value;
+            }
+            $objects[] = $object;
+        }
+
+        return $objects;
     }
 
     /**

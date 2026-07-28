@@ -60,16 +60,20 @@ class TvTimeProcess extends Controller
 
         $extractDir = null;
         try {
-            $extractDir  = $this->extract($job['zip_path'], $id);
-            $parsed      = (new Parser())->parse($extractDir);
-            $alreadyDone = $importModel->getProcessedShowIds($job);
-            $batch       = (new Processor($this->client))->processBatch((int) $job['id_user'], $parsed, $alreadyDone);
+            $extractDir        = $this->extract($job['zip_path'], $id);
+            $parsed            = (new Parser())->parse($extractDir);
+            $alreadyDoneShows  = $importModel->getProcessedShowIds($job);
+            $alreadyDoneLists  = $importModel->getProcessedListKeys($job);
+            $batch             = (new Processor($this->client))
+                ->processBatch((int) $job['id_user'], $parsed, $alreadyDoneShows, $alreadyDoneLists);
 
-            $importModel->recordBatch($id, $batch['done_show_ids'], array(
+            $importModel->recordBatch($id, $batch['done_show_ids'], $batch['done_list_keys'], array(
                 'shows_synced'       => $batch['shows_synced'],
                 'shows_failed'       => $batch['shows_failed'],
                 'episodes_watched'   => $batch['episodes_watched'],
                 'episodes_rewatched' => $batch['episodes_rewatched'],
+                'lists_created'      => $batch['lists_created'],
+                'list_series_added'  => $batch['list_series_added'],
             ));
 
             if ($batch['finished']) {

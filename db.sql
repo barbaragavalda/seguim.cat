@@ -663,6 +663,10 @@ CREATE TABLE `tvtime_import` (
   -- JSON array of TheTVDB series ids already synced+applied - the resume
   -- checkpoint between batches
   `processed_show_ids` text,
+  -- JSON array of lists-prod-lists.csv's own s_key values already created -
+  -- same resume purpose as processed_show_ids, but for the separate
+  -- lists-import phase that only starts once every show is done
+  `processed_list_keys` text,
   -- JSON summary, updated incrementally after every batch (shows synced,
   -- episodes marked watched, shows not found on TheTVDB, ...)
   `summary` text,
@@ -672,6 +676,45 @@ CREATE TABLE `tvtime_import` (
   PRIMARY KEY (`id_tvtime_import`) USING BTREE,
   KEY `id_user` (`id_user`),
   KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_list (custom user-curated series lists, e.g.
+-- imported from TV Time's own "lists" feature - see Api\Model\UserList).
+-- `ordering` uses large gaps (1000 per slot) rather than dense 0..n-1
+-- positions specifically so reordering only ever needs the id of the
+-- neighbor a client dropped an item next to (always visible on whatever
+-- page it's currently looking at), never the full cross-page order -
+-- Api\Model\UserList::moveAfter()/UserListSerie::moveAfter() insert a
+-- new value at the midpoint between two neighbors, only renumbering the
+-- whole collection on the rare occasion two neighbors are already
+-- adjacent integers with no room left between them
+-- ----------------------------
+DROP TABLE IF EXISTS `user_list`;
+CREATE TABLE `user_list` (
+  `id_user_list` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `ordering` int(10) NOT NULL DEFAULT 0,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user_list`) USING BTREE,
+  KEY `id_user_ordering` (`id_user`, `ordering`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_list_serie (a list's own series, own ordering
+-- within that list - same gap-based scheme as user_list.ordering above)
+-- ----------------------------
+DROP TABLE IF EXISTS `user_list_serie`;
+CREATE TABLE `user_list_serie` (
+  `id_user_list_serie` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user_list` mediumint(8) unsigned NOT NULL,
+  `id_serie` mediumint(8) unsigned NOT NULL,
+  `ordering` int(10) NOT NULL DEFAULT 0,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user_list_serie`) USING BTREE,
+  UNIQUE KEY `id_user_list_serie_lookup` (`id_user_list`, `id_serie`),
+  KEY `id_user_list_ordering` (`id_user_list`, `ordering`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 1;

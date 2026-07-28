@@ -179,6 +179,50 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     are still imported, just hidden from both watchlist endpoints (see above) rather than dropped,
     in case the app wants to surface them differently later.
 
+    The same import also recreates the account's own custom lists (see below) from the export's
+    `lists-prod-lists.csv`, once every show above has finished syncing (lists are the far smaller,
+    less TheTVDB-call-heavy piece, and most of their series are already synced by the time shows
+    finish anyway). Movie-only list entries are skipped (TV Time list rows can be `type:series`,
+    which has a usable TheTVDB id, or `type:movie`, which only has an opaque TV Time-internal uuid
+    - out of scope, same as the rest of this app). Unnamed lists (TV Time auto-generates several
+    per account with no user-chosen name - the majority in a real export) get a placeholder name,
+    `"List from {creation date}"`.
+
+  - **Custom lists** (`src/Api/Model/UserList.php`, `src/Api/Model/UserListSerie.php`,
+    `src/Api/Controller/Lists/`): user-created, freely-orderable collections of series, separate
+    from the watchlist.
+
+    | Method | Path                                    | Purpose                                  |
+    |--------|------------------------------------------|-------------------------------------------|
+    | GET    | `/api/lists`                              | The user's lists, in order (`?page=`, 0-based - `hasMore`) |
+    | POST   | `/api/lists`                              | Create a list (`name`)                    |
+    | POST   | `/api/lists/{id}`                         | Rename it (`name`) - can be changed any time |
+    | DELETE | `/api/lists/{id}`                         | Delete it (and its series)                |
+    | POST   | `/api/lists/{id}/reorder`                 | Move it - see below                       |
+    | GET    | `/api/lists/{id}`                         | The list's series, in order (`?page=`, 0-based - `hasMore`) |
+    | POST   | `/api/lists/{id}/series/{tvdbId}`         | Add a series (lazy-mirrors it first, like watchlist add) |
+    | DELETE | `/api/lists/{id}/series/{tvdbId}`         | Remove a series                           |
+    | POST   | `/api/lists/{id}/series/{tvdbId}/reorder` | Move it within the list - see below       |
+
+    Every list-scoped route checks `UserList::belongsToUser()` first and returns a plain `404` if
+    the list isn't the caller's - prevents cross-account tampering via a guessed id, same pattern
+    as everywhere else per-user resources are addressed by their own numeric id in this app.
+    Deleting a list or removing a series from it is a no-op if it wasn't there to begin with
+    (matches `Watchlist::remove()`'s own tolerant-delete convention).
+
+    **Reordering is pagination-safe by design**: both "move this list" and "move this series
+    within its list" take a single `after` param - the id of whatever the client already has
+    visible on the current page, right before the drop target - rather than the collection's full
+    new order, since a client paging through hundreds of imported list entries may never have every
+    item loaded at once. `after` empty/omitted means "move to the front". Under the hood, each item
+    has an `ordering` integer spaced 1000 apart (`UserList`/`UserListSerie`'s `GAP` constant); a
+    move computes the new value as the midpoint between the target neighbor and whatever already
+    sits right after it (or `target + GAP` if it's last, or `MIN - GAP` for "to the front"). If two
+    items' `ordering` are already adjacent integers and no midpoint fits, the whole collection is
+    renumbered (1000, 2000, 3000...) and the move retried once - verified by manually forcing a
+    collision and confirming the API rebalances before completing the move. This way a single move
+    only ever costs the visible neighbor's id, never the full cross-page ordering.
+
   - **Language resolution**: the `api` sub-project isn't `{lang}`-prefixed like the public site, so
     its language comes from `Accept-Language` (falling back to session, then the project's default
     `ca` — see `Core\Utils\Language::initLanguage()`). This resolves *per request*, which is right
