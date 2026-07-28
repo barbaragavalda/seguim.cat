@@ -129,36 +129,48 @@ class TvTimeImport extends Model
     }
 
     /**
-     * merges this batch's newly-done show ids/list keys and summary counts
-     * into whatever's already recorded - read-then-write is fine here since
-     * only one batch of one job is ever processed at a time (no concurrent
-     * writers to race against)
+     * @return array<string>
+     */
+    public function getProcessedMovieKeys(array $job): array
+    {
+        return !empty($job['processed_movie_keys']) ? json_decode($job['processed_movie_keys'], true) : array();
+    }
+
+    /**
+     * merges this batch's newly-done show ids/list keys/movie names and
+     * summary counts into whatever's already recorded - read-then-write is
+     * fine here since only one batch of one job is ever processed at a time
+     * (no concurrent writers to race against)
      *
      * @param array<int>    $newDoneShowIds
      * @param array<string> $newDoneListKeys
+     * @param array<string> $newDoneMovieKeys
      * @param array{
      *     shows_synced: int, shows_failed: array<int>, episodes_watched: int, episodes_rewatched: int,
-     *     lists_created: int, list_series_added: int
+     *     lists_created: int, list_series_added: int, movies_synced: int, movies_unmatched: array<string>,
+     *     movies_watched: int, movies_rewatched: int
      * } $summaryDelta
      */
-    public function recordBatch(int $id, array $newDoneShowIds, array $newDoneListKeys, array $summaryDelta): void
+    public function recordBatch(int $id, array $newDoneShowIds, array $newDoneListKeys, array $newDoneMovieKeys, array $summaryDelta): void
     {
         $sql    = '
-            SELECT processed_show_ids, processed_list_keys, summary
+            SELECT processed_show_ids, processed_list_keys, processed_movie_keys, summary
             FROM tvtime_import
             WHERE id_tvtime_import = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
         $job    = $this->mysql->query($sql, $params)[0] ?? array();
 
-        $mergedShowIds  = array_values(array_unique(array_merge($this->getProcessedShowIds($job), $newDoneShowIds)));
-        $mergedListKeys = array_values(array_unique(array_merge($this->getProcessedListKeys($job), $newDoneListKeys)));
+        $mergedShowIds   = array_values(array_unique(array_merge($this->getProcessedShowIds($job), $newDoneShowIds)));
+        $mergedListKeys  = array_values(array_unique(array_merge($this->getProcessedListKeys($job), $newDoneListKeys)));
+        $mergedMovieKeys = array_values(array_unique(array_merge($this->getProcessedMovieKeys($job), $newDoneMovieKeys)));
 
         $summary       = !empty($job['summary'])
             ? json_decode($job['summary'], true)
             : array(
                 'shows_synced' => 0, 'shows_failed' => array(), 'episodes_watched' => 0, 'episodes_rewatched' => 0,
-                'lists_created' => 0, 'list_series_added' => 0,
+                'lists_created' => 0, 'list_series_added' => 0, 'movies_synced' => 0, 'movies_unmatched' => array(),
+                'movies_watched' => 0, 'movies_rewatched' => 0,
             );
         $mergedSummary = array(
             'shows_synced'       => $summary['shows_synced'] + $summaryDelta['shows_synced'],
@@ -167,18 +179,27 @@ class TvTimeImport extends Model
             'episodes_rewatched' => ($summary['episodes_rewatched'] ?? 0) + $summaryDelta['episodes_rewatched'],
             'lists_created'      => ($summary['lists_created'] ?? 0) + $summaryDelta['lists_created'],
             'list_series_added'  => ($summary['list_series_added'] ?? 0) + $summaryDelta['list_series_added'],
+            'movies_synced'      => ($summary['movies_synced'] ?? 0) + $summaryDelta['movies_synced'],
+            'movies_unmatched'   => array_values(array_unique(array_merge(
+                $summary['movies_unmatched'] ?? array(),
+                $summaryDelta['movies_unmatched']
+            ))),
+            'movies_watched'     => ($summary['movies_watched'] ?? 0) + $summaryDelta['movies_watched'],
+            'movies_rewatched'   => ($summary['movies_rewatched'] ?? 0) + $summaryDelta['movies_rewatched'],
         );
 
         $sql    = '
             UPDATE tvtime_import
-            SET processed_show_ids = :show_ids, processed_list_keys = :list_keys, summary = :summary
+            SET processed_show_ids = :show_ids, processed_list_keys = :list_keys,
+                processed_movie_keys = :movie_keys, summary = :summary
             WHERE id_tvtime_import = :id
         ';
         $params = array(
-            'id'        => array('value' => $id, 'type' => PDO::PARAM_INT),
-            'show_ids'  => array('value' => json_encode($mergedShowIds), 'type' => PDO::PARAM_STR),
-            'list_keys' => array('value' => json_encode($mergedListKeys), 'type' => PDO::PARAM_STR),
-            'summary'   => array('value' => json_encode($mergedSummary), 'type' => PDO::PARAM_STR),
+            'id'         => array('value' => $id, 'type' => PDO::PARAM_INT),
+            'show_ids'   => array('value' => json_encode($mergedShowIds), 'type' => PDO::PARAM_STR),
+            'list_keys'  => array('value' => json_encode($mergedListKeys), 'type' => PDO::PARAM_STR),
+            'movie_keys' => array('value' => json_encode($mergedMovieKeys), 'type' => PDO::PARAM_STR),
+            'summary'    => array('value' => json_encode($mergedSummary), 'type' => PDO::PARAM_STR),
         );
         $this->mysql->query($sql, $params);
     }

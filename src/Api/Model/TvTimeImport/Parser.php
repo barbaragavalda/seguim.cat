@@ -42,11 +42,28 @@ use Generator;
  * (`"[map[created_at:1.7e+09 id:123 type:series] map[...] ...]"`), parsed
  * here with a regex rather than json_decode() (confirmed empirically: 446
  * objects across the real export's 27 lists, zero mismatches against a raw
- * substring count of "map["). Movie entries (no TheTVDB series id, only an
- * opaque `uuid`) are skipped - out of scope, same as everywhere else in
- * this app. Each object's own `created_at` is a Unix timestamp (unlike
- * every other file's plain datetime string) since that's how TV Time's own
- * backend serialized it.
+ * substring count of "map["). Movie entries in a *list* specifically are
+ * still skipped (this app's own custom lists - Api\Model\UserList - stay
+ * series-only) - see parseMovies() below for movie tracking/watch history
+ * itself, which is in scope. Each object's own `created_at` is a Unix
+ * timestamp (unlike every other file's plain datetime string) since that's
+ * how TV Time's own backend serialized it.
+ *
+ * parseMovies() reads tracking-prod-records.csv's `entity_type=movie` rows
+ * separately from the episode-watching logic above - a movie has no
+ * TheTVDB id in the export at all (only `movie_name`+`release_date`, see
+ * Api\Model\TvTimeImport\MovieMatcher), and its own rows follow a
+ * genuinely different shape: each `uuid` there is one *tracked movie entry*,
+ * not one event - `type` values sharing that uuid ('follow'/'towatch'/
+ * 'watch'/'rewatch'/'rewatch_count') mark which buckets that single entry
+ * currently belongs to, confirmed empirically by grouping the real export's
+ * movie rows by uuid (e.g. a 'follow' row and a 'towatch' row sharing one
+ * uuid have the exact same created_at - the same underlying entry, not two
+ * events). Each distinct 'rewatch'-typed row for a uuid IS a genuine extra
+ * watch with its own timestamp though (confirmed: the count of 'rewatch'
+ * rows for a uuid always equals its final rewatch_count) - the separate
+ * 'rewatch_count' rows are pure duplicates of the last 'rewatch' row (same
+ * count, same timestamp) and are ignored here entirely.
  */
 final class Parser
 {
@@ -69,7 +86,8 @@ final class Parser
      *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
      *     watched: array<int, array<int, string>>,
      *     rewatches: array<int, array<int, array{cpt: int, at: string}>>,
-     *     lists: array<string, array{name: string, created_at: string, series: array<int, string>}>
+     *     lists: array<string, array{name: string, created_at: string, series: array<int, string>}>,
+     *     movies: array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>
      * }
      */
     public function parse(string $dir): array
@@ -85,6 +103,7 @@ final class Parser
 
         $rewatches = $this->parseRewatches($dir . '/rewatched_episode.csv', $nameToId);
         $lists     = $this->parseLists($dir . '/lists-prod-lists.csv');
+        $movies    = $this->parseMovies($dir . '/tracking-prod-records.csv');
 
         // a show with watch history but no row in followed_tv_show.csv at
         // all was unfollowed/deleted in TVTime at some point - still worth
@@ -98,7 +117,13 @@ final class Parser
             }
         }
 
-        return array('shows' => $shows, 'watched' => $watched, 'rewatches' => $rewatches, 'lists' => $lists);
+        return array(
+            'shows'     => $shows,
+            'watched'   => $watched,
+            'rewatches' => $rewatches,
+            'lists'     => $lists,
+            'movies'    => $movies,
+        );
     }
 
     /**
@@ -278,6 +303,99 @@ final class Parser
         }
 
         return $objects;
+    }
+
+    /**
+     * see this class' own docblock for the uuid/type grouping this relies
+     * on - each uuid is one tracked movie entry, not one event
+     *
+     * @return array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>
+     */
+    private function parseMovies(string $path): array
+    {
+        $rowsByUuid = array();
+        foreach ($this->readCsv($path) as $row) {
+            if (($row['entity_type'] ?? '') !== 'movie') {
+                continue;
+            }
+            $uuid = $row['uuid'] ?? '';
+            if ($uuid === '') {
+                continue;
+            }
+            $rowsByUuid[$uuid][] = $row;
+        }
+
+        $movies = array();
+        foreach ($rowsByUuid as $rows) {
+            $name = trim($rows[0]['movie_name'] ?? '');
+            $types = array_column($rows, 'type');
+            // a lone 'rewatch_count' row with none of 'follow'/'towatch'/
+            // 'watch' carries no actionable state at all (confirmed
+            // empirically: a couple of real export rows are exactly this,
+            // rewatch_count=0 with nothing else) - skip rather than import
+            // an entry with no known status
+            if ($name === '' || !array_intersect($types, array('follow', 'towatch', 'watch'))) {
+                continue;
+            }
+
+            $releaseDate = $rows[0]['release_date'] ?? '';
+            $year        = ($releaseDate !== '' && substr($releaseDate, 0, 4) !== '0001')
+                ? substr($releaseDate, 0, 4)
+                : null;
+
+            $followRow = $this->firstRowOfType($rows, 'follow') ?? $this->firstRowOfType($rows, 'towatch');
+            $watchRow  = $this->firstRowOfType($rows, 'watch');
+            $rewatchAt = array_values(array_filter(array_map(
+                fn(array $r): ?string => $r['type'] === 'rewatch' && ($r['created_at'] ?? '') !== '' ? $r['created_at'] : null,
+                $rows
+            )));
+            sort($rewatchAt);
+
+            $entry = array(
+                'expected_year'        => $year,
+                'watchlist_created_at' => $followRow['created_at'] ?? null,
+                'watched_at'           => $watchRow['created_at'] ?? null,
+                'rewatch_at'           => $rewatchAt,
+            );
+
+            // the same movie name already seen under a different uuid
+            // (unfollowed and re-followed later, etc.) - merge rather than
+            // overwrite: earliest watchlist/first-watch date wins, rewatch
+            // events are combined, same "earliest wins" philosophy as
+            // recordWatch() below
+            $movies[$name] = !isset($movies[$name]) ? $entry : array(
+                'expected_year'        => $movies[$name]['expected_year'] ?? $entry['expected_year'],
+                'watchlist_created_at' => $this->earliest($movies[$name]['watchlist_created_at'], $entry['watchlist_created_at']),
+                'watched_at'           => $this->earliest($movies[$name]['watched_at'], $entry['watched_at']),
+                'rewatch_at'           => array_merge($movies[$name]['rewatch_at'], $entry['rewatch_at']),
+            );
+        }
+
+        return $movies;
+    }
+
+    /**
+     * @param array<int, array<string, string>> $rows
+     */
+    private function firstRowOfType(array $rows, string $type): ?array
+    {
+        foreach ($rows as $row) {
+            if (($row['type'] ?? '') === $type) {
+                return $row;
+            }
+        }
+        return null;
+    }
+
+    private function earliest(?string $a, ?string $b): ?string
+    {
+        if ($a === null) {
+            return $b;
+        }
+        if ($b === null) {
+            return $a;
+        }
+        return $a < $b ? $a : $b;
     }
 
     /**

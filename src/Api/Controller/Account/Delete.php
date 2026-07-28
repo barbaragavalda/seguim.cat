@@ -3,9 +3,11 @@
 namespace Api\Controller\Account;
 
 use Api\Controller\Controller;
+use Api\Model\MovieWatchlist;
 use Api\Model\TvTimeImport;
 use Api\Model\UserList;
 use Api\Model\WatchedEpisode;
+use Api\Model\WatchedMovie;
 use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
 use Webservice\Model\EmailChange;
@@ -17,9 +19,9 @@ use Webservice\Model\UserToken;
  * project's own routes are loaded before a vendor package's and win on
  * collision, see Core\Bootstrap::loadRoutes()) because that vendor
  * controller only knows about the user/user_token schema it owns - it has
- * no idea this project also keeps its own per-user rows in user_watchlist/
- * user_episode_watched/tvtime_import/user_list, which were otherwise left
- * orphaned after a delete
+ * no idea this project also keeps its own per-user rows in user_serie_watchlist/
+ * user_episode_watched/tvtime_import/user_list/user_movie_watchlist/
+ * user_movie_watched, which were otherwise left orphaned after a delete
  */
 #[Route('/account', methods: ['DELETE'], name: 'api.account.delete')]
 class Delete extends Controller
@@ -32,6 +34,8 @@ class Delete extends Controller
         (new UserToken())->revokeAllForUser($userID);
         (new Watchlist())->removeAllForUser($userID);
         (new WatchedEpisode())->removeAllForUser($userID);
+        (new MovieWatchlist())->removeAllForUser($userID);
+        (new WatchedMovie())->removeAllForUser($userID);
         (new TvTimeImport())->removeAllForUser($userID);
         (new UserList())->removeAllForUser($userID);
         (new EmailChange())->deleteForUser($userID);

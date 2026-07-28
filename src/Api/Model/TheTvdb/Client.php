@@ -10,6 +10,14 @@ class Client
 
     private const string BASE_URL = 'https://api4.thetvdb.com/v4';
 
+    /**
+     * artwork type 15 = "Background" for a movie - confirmed via
+     * GET /artwork/types (recordType "movie"); NOT type 3, which is what
+     * Api\Model\Series::sync()/getSeriesBackground() use for a series -
+     * these two type ids are unrelated despite sharing the same English name
+     */
+    private const int MOVIE_BACKGROUND_ARTWORK_TYPE = 15;
+
     private Config $config;
 
     private string $tokenCacheDir;
@@ -25,31 +33,71 @@ class Client
         $this->tokenCacheFile = $this->tokenCacheDir . 'token.json';
     }
 
+    public function search(string $query, int $page, string $tvdbLanguageCode): array
+    {
+        return $this->performSearch($query, $page, 'series', $tvdbLanguageCode);
+    }
+
+    public function searchMovies(string $query, int $page, string $tvdbLanguageCode): array
+    {
+        return $this->performSearch($query, $page, 'movie', $tvdbLanguageCode);
+    }
+
+    /**
+     * omitting $type from the request entirely (see performSearch()) returns
+     * series and movies (and other TheTVDB record types) ranked together in
+     * one list - confirmed empirically each result still carries its own
+     * `type` field, so the caller can tell them apart without a second
+     * lookup. Used by the app's single top-level search, unlike search()/
+     * searchMovies() above which stay type-scoped for flows that only make
+     * sense for one kind (e.g. adding a series to a user_list)
+     */
+    public function searchAll(string $query, int $page, string $tvdbLanguageCode): array
+    {
+        return $this->performSearch($query, $page, null, $tvdbLanguageCode);
+    }
+
     /**
      * $tvdbLanguageCode picks each result's name/overview out of its own
      * inline `translations`/`overviews` maps (TheTVDB's search index already
      * returns every language it has for a result, confirmed empirically -
      * no separate per-result translation call needed here, unlike series/
-     * episode detail) - falls back to the result's own primary-language
-     * name/overview if that specific language isn't in the map
+     * episode/movie detail) - falls back to the result's own primary-
+     * language name/overview if that specific language isn't in the map.
+     * $type is TheTVDB's own search type ('series'/'movie'), or null to
+     * search across every type at once (searchAll())
      */
-    public function search(string $query, int $page, string $tvdbLanguageCode): array
+    private function performSearch(string $query, int $page, ?string $type, string $tvdbLanguageCode): array
     {
-        $response = $this->request(
-            'GET',
-            '/search',
-            array('query' => $query, 'type' => 'series', 'page' => $page)
-        );
-        $results = $response['data'] ?? array();
+        $query2 = array('query' => $query, 'page' => $page);
+        if ($type !== null) {
+            $query2['type'] = $type;
+        }
+        $response = $this->request('GET', '/search', $query2);
+        $results  = $response['data'] ?? array();
+
+        if ($type === null) {
+            // an unrestricted search (searchAll()) returns every TheTVDB
+            // record type - company, person, etc. - not just series/movie;
+            // confirmed empirically (e.g. "Encanto" also matches "Encanto
+            // Enterprises", a company). The app's unified search only ever
+            // knows how to display/open these two kinds, so anything else
+            // is dropped here rather than leaking into the UI as a
+            // mislabeled series
+            $results = array_values(array_filter(
+                $results,
+                fn(array $result): bool => in_array($result['type'] ?? null, array('series', 'movie'), true)
+            ));
+        }
 
         foreach ($results as &$result) {
             $result['name']     = $result['translations'][$tvdbLanguageCode] ?? $result['name'] ?? null;
             $result['overview'] = $result['overviews'][$tvdbLanguageCode] ?? $result['overview'] ?? null;
-            // renamed to match serie.image - no background/fanart field
-            // exists on a search result at all (confirmed empirically), and
-            // fetching one would mean a separate /artworks call per result;
-            // it only ever appears once a series is actually opened
-            // (Series/Detail, serie.background)
+            // renamed to match serie.image/movie.image - no background/
+            // fanart field exists on a search result at all (confirmed
+            // empirically), and fetching one would mean a separate
+            // /artworks call per result; it only ever appears once a
+            // series/movie is actually opened (Detail, .background)
             $result['image'] = $result['image_url'] ?? null;
             unset($result['image_url']);
         }
@@ -65,6 +113,51 @@ class Client
     {
         $response = $this->request('GET', '/series/' . $tvdbId);
         return $response['data'] ?? array();
+    }
+
+    /**
+     * unlike getSeries()/getSeriesBackground() (two separate TheTVDB
+     * requests), a movie's own GET /movies/{id}/extended already returns its
+     * full artworks list inline - confirmed empirically (57 artworks back
+     * for "Encanto", including type 15 backgrounds) - so this is the only
+     * request a movie sync ever needs
+     */
+    public function getMovie(int $tvdbId): array
+    {
+        $response = $this->request('GET', '/movies/' . $tvdbId . '/extended');
+        $data     = $response['data'] ?? array();
+        if (empty($data)) {
+            return array();
+        }
+
+        $data['background'] = $this->getMovieBackground($data['artworks'] ?? array());
+        return $data;
+    }
+
+    private function getMovieBackground(array $artworks): ?string
+    {
+        $backgrounds = array_values(array_filter(
+            $artworks,
+            fn(array $artwork): bool => ($artwork['type'] ?? null) === self::MOVIE_BACKGROUND_ARTWORK_TYPE
+        ));
+        if (empty($backgrounds)) {
+            return null;
+        }
+
+        usort($backgrounds, fn(array $a, array $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
+        return $backgrounds[0]['image'] ?? null;
+    }
+
+    /**
+     * counterpart of getSeriesTranslation() - same shape ({name, overview,
+     * language}), same null-on-no-translation behavior, confirmed empirically
+     * against the real API (e.g. "Encanto" has a Spanish translation, no
+     * Catalan one - a 404, not an error)
+     */
+    public function getMovieTranslation(int $tvdbId, string $tvdbLanguageCode): ?array
+    {
+        $response = $this->request('GET', '/movies/' . $tvdbId . '/translations/' . $tvdbLanguageCode);
+        return !empty($response['data']) ? $response['data'] : null;
     }
 
     /**

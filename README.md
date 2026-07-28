@@ -19,7 +19,7 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     revokes every device token, and - via this project's own `Api\Controller\Account\Delete`,
     which overrides `Webservice\Controller\DeleteAccount` on the same path since a project's own
     routes win over a vendor package's, see `Core\Bootstrap::loadRoutes()` - also removes the
-    user's own `user_watchlist`/`user_episode_watched` rows, which the vendor package has no idea
+    user's own `user_serie_watchlist`/`user_episode_watched` rows, which the vendor package has no idea
     exist), `POST /api/password/forgot` (`email` - always the same response
     whether or not it's registered, emails a 6-digit code valid 15 min if it is),
     `POST /api/password/reset` (`email`, `code`, `password` — max 5 wrong attempts before the code
@@ -125,12 +125,12 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     can't actually happen here, since `not-started` is zero-watched by definition) or *hasn't aired
     at all yet*. `premiere_in_days` (days until the earliest still-upcoming aired date, `null`
     otherwise) exists so a client can tell "coming soon" apart from "you're all caught up" instead
-    of both looking identical (`next_episode: null`). Archived/removed shows (`user_watchlist`'s
+    of both looking identical (`next_episode: null`). Archived/removed shows (`user_serie_watchlist`'s
     `archived`/`removed` flags - set automatically by the TV Time importer below, or toggled by hand
     via the `archived`/`removed` endpoints above) never appear in either watchlist endpoint - the
     rows stay in the database (watched-episode history included), just hidden from both lists. This
     is deliberately different from `DELETE /watchlist/{tvdbId}`, which actually deletes the
-    `user_watchlist` row.
+    `user_serie_watchlist` row.
 
     `GET /watchlist` is a separate, unified "browse everything" view (for a profile-style screen),
     distinct from the two opinionated home-screen lists above - every one of its 6 `?status=`
@@ -174,7 +174,7 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     (`pending`/`processing`/`done`/`failed`) and `summary` (shows synced/failed, episodes watched/
     rewatched).
 
-    A show still followed in TV Time but archived there sets `user_watchlist.archived`; one with
+    A show still followed in TV Time but archived there sets `user_serie_watchlist.archived`; one with
     watch history but no longer followed at all (unfollowed/deleted) sets `.removed` instead - both
     are still imported, just hidden from both watchlist endpoints (see above) rather than dropped,
     in case the app wants to surface them differently later.
@@ -250,8 +250,8 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
      deliver reset codes (in dev, if this isn't set up yet, the code is logged via `error_log()`
      instead of failing the request - see `Webservice\Controller\ForgotPassword`)
 3. Create the database and import `db.sql` (Appacman's minimal schema + this project's own
-   `user`/`user_token`/`password_reset`/`email_change`/`serie`/`serie_lang`/`episode`/
-   `episode_lang`/`user_watchlist`/`user_episode_watched`/`tvtime_import` tables — no admin user
+   `user`/`user_token`/`user_password_reset`/`email_change`/`serie`/`serie_lang`/`episode`/
+   `episode_lang`/`user_serie_watchlist`/`user_episode_watched`/`tvtime_import` tables — no admin user
    seeded, see below). **Careful re-importing this later**: `serie`/`serie_lang`/`episode`/
    `episode_lang` hold the TheTVDB mirror cache, which can mean hundreds of shows re-fetched from
    scratch if wiped - apply schema changes to those four tables with `ALTER TABLE` against the live

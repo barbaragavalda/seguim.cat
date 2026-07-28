@@ -24,7 +24,7 @@ class Add extends Controller
     {
         $tvdbId = (int) $this->getParam('tvdbId');
 
-        // sync() first so user_watchlist always points at a real local
+        // sync() first so user_serie_watchlist always points at a real local
         // series row, even if this is the first time anyone's touched it
         $series = new Series();
         $info   = $series->sync($tvdbId, $this->client);

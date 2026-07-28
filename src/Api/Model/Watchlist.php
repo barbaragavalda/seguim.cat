@@ -13,7 +13,7 @@ class Watchlist extends Model
     public function add(int $idUser, int $idSerie): void
     {
         $sql    = '
-            INSERT IGNORE INTO user_watchlist (id_user, id_serie)
+            INSERT IGNORE INTO user_serie_watchlist (id_user, id_serie)
             VALUES (:id_user, :id_serie)
         ';
         $params = array(
@@ -37,7 +37,7 @@ class Watchlist extends Model
     public function addFromImport(int $idUser, int $idSerie, bool $archived, bool $removed, ?string $createdAt = null): void
     {
         $sql    = '
-            INSERT INTO user_watchlist (id_user, id_serie, archived, removed, created)
+            INSERT INTO user_serie_watchlist (id_user, id_serie, archived, removed, created)
             VALUES (:id_user, :id_serie, :archived, :removed, :created)
             ON DUPLICATE KEY UPDATE archived = :archived_upd, removed = :removed_upd
         ';
@@ -62,7 +62,7 @@ class Watchlist extends Model
     public function setArchived(int $idUser, int $idSerie, bool $archived): void
     {
         $sql    = '
-            UPDATE user_watchlist
+            UPDATE user_serie_watchlist
             SET archived = :archived
             WHERE id_user = :id_user AND id_serie = :id_serie
         ';
@@ -84,7 +84,7 @@ class Watchlist extends Model
     public function setRemoved(int $idUser, int $idSerie, bool $removed): void
     {
         $sql    = '
-            UPDATE user_watchlist
+            UPDATE user_serie_watchlist
             SET removed = :removed
             WHERE id_user = :id_user AND id_serie = :id_serie
         ';
@@ -104,7 +104,7 @@ class Watchlist extends Model
     public function remove(int $idUser, int $idSerie): void
     {
         $sql    = '
-            DELETE FROM user_watchlist
+            DELETE FROM user_serie_watchlist
             WHERE id_user = :id_user AND id_serie = :id_serie
         ';
         $params = array(
@@ -117,7 +117,7 @@ class Watchlist extends Model
     public function removeAllForUser(int $idUser): void
     {
         $sql    = '
-            DELETE FROM user_watchlist
+            DELETE FROM user_serie_watchlist
             WHERE id_user = :id_user
         ';
         $params = array(
@@ -130,7 +130,7 @@ class Watchlist extends Model
     {
         $sql    = '
             SELECT 1
-            FROM user_watchlist
+            FROM user_serie_watchlist
             WHERE id_user = :id_user AND id_serie = :id_serie
             LIMIT 1
         ';
@@ -154,7 +154,7 @@ class Watchlist extends Model
     {
         $sql    = '
             SELECT archived, removed
-            FROM user_watchlist
+            FROM user_serie_watchlist
             WHERE id_user = :id_user AND id_serie = :id_serie
             LIMIT 1
         ';
@@ -192,7 +192,7 @@ class Watchlist extends Model
     {
         $sql    = '
             SELECT s.*, MAX(sl.name) AS name, MAX(sl.overview) AS overview
-            FROM user_watchlist w
+            FROM user_serie_watchlist w
             INNER JOIN serie s ON s.id_serie = w.id_serie
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
             INNER JOIN user_episode_watched uew ON uew.id_user = w.id_user
@@ -230,7 +230,7 @@ class Watchlist extends Model
     {
         $sql    = '
             SELECT s.*, sl.name, sl.overview
-            FROM user_watchlist w
+            FROM user_serie_watchlist w
             INNER JOIN serie s ON s.id_serie = w.id_serie
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
             WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
@@ -299,7 +299,7 @@ class Watchlist extends Model
         $sql = match ($status) {
             'all'      => '
                 SELECT s.*, sl.name, sl.overview
-                FROM user_watchlist w
+                FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user' . $searchCondition . '
@@ -308,7 +308,7 @@ class Watchlist extends Model
             ',
             'removed'  => '
                 SELECT s.*, sl.name, sl.overview
-                FROM user_watchlist w
+                FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.removed = 1' . $searchCondition . '
@@ -317,7 +317,7 @@ class Watchlist extends Model
             ',
             'archived' => '
                 SELECT s.*, sl.name, sl.overview
-                FROM user_watchlist w
+                FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 1' . $searchCondition . '
@@ -326,7 +326,7 @@ class Watchlist extends Model
             ',
             'not_started' => '
                 SELECT s.*, sl.name, sl.overview
-                FROM user_watchlist w
+                FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0 AND NOT ' . $hasWatched . $searchCondition . '
@@ -335,7 +335,7 @@ class Watchlist extends Model
             ',
             'watching' => '
                 SELECT s.*, sl.name, sl.overview
-                FROM user_watchlist w
+                FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
@@ -349,7 +349,7 @@ class Watchlist extends Model
             ',
             'finished' => '
                 SELECT s.*, sl.name, sl.overview
-                FROM user_watchlist w
+                FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0

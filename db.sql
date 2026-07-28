@@ -565,10 +565,89 @@ CREATE TABLE `episode_lang` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for user_watchlist
+-- Table structure for movie (local lazy mirror of TheTVDB movies - same
+-- on-demand lazy-mirroring shape as serie above, but a movie's own
+-- GET /movies/{id}/extended already includes its artworks array inline, so
+-- syncing one only ever costs a single TheTVDB request (no separate
+-- /artworks call like serie.background needs)
 -- ----------------------------
-DROP TABLE IF EXISTS `user_watchlist`;
-CREATE TABLE `user_watchlist` (
+DROP TABLE IF EXISTS `movie`;
+CREATE TABLE `movie` (
+  `id_movie` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `tvdb_id` int(10) unsigned NOT NULL,
+  -- per-language translated name/overview live in movie_lang, not here -
+  -- same default_name/default_overview fallback convention as serie
+  `default_name` varchar(255) DEFAULT NULL,
+  `default_overview` text DEFAULT NULL,
+  `image` varchar(500) DEFAULT NULL,
+  -- highest-scored artwork of type 15 ("Background", confirmed via
+  -- GET /artwork/types - NOT type 3, which is series' own background type)
+  -- among /movies/{id}/extended's inline `artworks` array
+  `background` varchar(500) DEFAULT NULL,
+  -- a movie only has one release year (unlike serie's year_start/year_end
+  -- range) - TheTVDB's own `year` field on the base/extended record
+  `year` varchar(4) DEFAULT NULL,
+  -- minutes, TheTVDB's own `runtime` field
+  `runtime` smallint(5) unsigned DEFAULT NULL,
+  `status` varchar(50) DEFAULT NULL,
+  `slug` varchar(255) DEFAULT NULL,
+  `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_movie`) USING BTREE,
+  UNIQUE KEY `tvdb_id` (`tvdb_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_lang (translated name/overview, lazily synced
+-- from TheTVDB's GET /movies/{id}/translations/{language} - same shape and
+-- "NULL row = confirmed no translation" convention as serie_lang)
+-- ----------------------------
+DROP TABLE IF EXISTS `movie_lang`;
+CREATE TABLE `movie_lang` (
+  `id_movie_lang` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `id_appacman_lang` tinyint(3) unsigned NOT NULL,
+  `name` varchar(255) DEFAULT NULL,
+  `overview` text,
+  `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_movie_lang`) USING BTREE,
+  UNIQUE KEY `id_movie_lang_lookup` (`id_movie`, `id_appacman_lang`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_movie_watchlist (counterpart of user_serie_watchlist -
+-- no archived/removed columns here: those exist on the series table purely
+-- because of TV Time import quirks around unfollowed/archived shows, which
+-- don't apply the same way to a movie import - see Api\Model\MovieWatchlist)
+-- ----------------------------
+DROP TABLE IF EXISTS `user_movie_watchlist`;
+CREATE TABLE `user_movie_watchlist` (
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user`, `id_movie`) USING BTREE,
+  KEY `id_movie` (`id_movie`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_movie_watched (one row per watch event, not per
+-- movie - same "rewatch adds a row rather than updating" shape as
+-- user_episode_watched, so watch count/history survives)
+-- ----------------------------
+DROP TABLE IF EXISTS `user_movie_watched`;
+CREATE TABLE `user_movie_watched` (
+  `id_user_movie_watched` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `watched_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user_movie_watched`) USING BTREE,
+  KEY `id_user_movie` (`id_user`, `id_movie`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_serie_watchlist
+-- ----------------------------
+DROP TABLE IF EXISTS `user_serie_watchlist`;
+CREATE TABLE `user_serie_watchlist` (
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_serie` mediumint(8) unsigned NOT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -601,13 +680,13 @@ CREATE TABLE `user_episode_watched` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for password_reset (Webservice\Model\PasswordReset - this
+-- Table structure for user_password_reset (Webservice\Model\PasswordReset - this
 -- package doesn't own the user/user_token schema either, see those tables'
 -- own comments above)
 -- ----------------------------
-DROP TABLE IF EXISTS `password_reset`;
-CREATE TABLE `password_reset` (
-  `id_password_reset` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+DROP TABLE IF EXISTS `user_password_reset`;
+CREATE TABLE `user_password_reset` (
+  `id_user_password_reset` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   -- SHA-256 hash of the 6-digit code, same reasoning as user_token.token
   `code` varchar(64) NOT NULL,
@@ -617,14 +696,14 @@ CREATE TABLE `password_reset` (
   `attempts` tinyint(3) unsigned NOT NULL DEFAULT 0,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `expires_at` timestamp NOT NULL,
-  PRIMARY KEY (`id_password_reset`) USING BTREE,
+  PRIMARY KEY (`id_user_password_reset`) USING BTREE,
   KEY `id_user` (`id_user`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
 -- Table structure for email_change (Webservice\Model\EmailChange - a
 -- pending change-of-email request, confirmed via a code sent to the *new*
--- address, same 6-digit/15-min/5-attempts shape as password_reset - see
+-- address, same 6-digit/15-min/5-attempts shape as user_password_reset - see
 -- Api\Controller\Account\{UpdateEmail,ConfirmEmailChange})
 -- ----------------------------
 DROP TABLE IF EXISTS `email_change`;
@@ -667,8 +746,15 @@ CREATE TABLE `tvtime_import` (
   -- same resume purpose as processed_show_ids, but for the separate
   -- lists-import phase that only starts once every show is done
   `processed_list_keys` text,
+  -- JSON array of movie names (tracking-prod-records.csv's own movie_name,
+  -- the only stable key available - see Api\Model\TvTimeImport\Parser -
+  -- there's no TheTVDB id for movies in the export) already resolved+
+  -- applied - same resume purpose as processed_show_ids, for the movies
+  -- phase that only starts once every show AND list is done
+  `processed_movie_keys` text,
   -- JSON summary, updated incrementally after every batch (shows synced,
-  -- episodes marked watched, shows not found on TheTVDB, ...)
+  -- episodes marked watched, shows not found on TheTVDB, movies synced/
+  -- unmatched, ...)
   `summary` text,
   `error` text,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
