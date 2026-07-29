@@ -12,7 +12,11 @@ class WatchedMovie extends Model
      * idempotent - a no-op if $idMovie is already watched at all (one or
      * more times), unlike markRewatched() below. Same shape as
      * WatchedEpisode::markWatched(), collapsed to a single entity since a
-     * movie has no episodes of its own
+     * movie has no episodes of its own. Deliberately never tags the row
+     * with an import id, same reasoning as WatchedEpisode::markWatched()'s
+     * own docblock - keeps id_tvtime_import IS NOT NULL meaning exactly
+     * "a syncRewatchFromImport()-inserted row" and nothing else, on both
+     * tables consistently
      */
     public function markWatched(int $idUser, int $idMovie, ?string $watchedAt = null): void
     {
@@ -26,11 +30,50 @@ class WatchedMovie extends Model
      * always inserts a new watch event, even if $idMovie is already watched
      * - user_movie_watched is one row per watch event, not per movie, so a
      * rewatch just adds another one rather than being silently absorbed
-     * like markWatched() would
+     * like markWatched() would. Used directly by the app's own rewatch
+     * controller; the importer uses syncRewatchFromImport() below instead
      */
     public function markRewatched(int $idUser, int $idMovie, ?string $watchedAt = null): void
     {
         $this->insertWatch($idUser, $idMovie, $watchedAt);
+    }
+
+    /**
+     * Unlike an episode rewatch (a bare count against one shared
+     * timestamp - see WatchedEpisode::syncRewatchesFromImport()'s own
+     * docblock), each movie rewatch in a TV Time export carries its own
+     * genuine, distinct timestamp (Api\Model\TvTimeImport\Parser's own
+     * docblock). That timestamp is itself a natural dedup key: if an
+     * earlier import already recorded a rewatch at this exact moment
+     * (tagged via $idTvtimeImport), a later import job re-processing the
+     * same export data is a no-op instead of inserting a duplicate.
+     *
+     * @return bool true if a new row was actually inserted
+     */
+    public function syncRewatchFromImport(int $idUser, int $idMovie, string $watchedAt, int $idTvtimeImport): bool
+    {
+        if ($this->hasImportedRewatchAt($idUser, $idMovie, $watchedAt)) {
+            return false;
+        }
+        $this->insertWatch($idUser, $idMovie, $watchedAt, $idTvtimeImport);
+        return true;
+    }
+
+    private function hasImportedRewatchAt(int $idUser, int $idMovie, string $watchedAt): bool
+    {
+        $sql    = '
+            SELECT 1
+            FROM user_movie_watched
+            WHERE id_user = :id_user AND id_movie = :id_movie
+              AND watched_at = :watched_at AND id_tvtime_import IS NOT NULL
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_movie'   => array('value' => $idMovie, 'type' => PDO::PARAM_INT),
+            'watched_at' => array('value' => $watchedAt, 'type' => PDO::PARAM_STR),
+        );
+        return count($this->mysql->query($sql, $params)) > 0;
     }
 
     /**
@@ -120,16 +163,17 @@ class WatchedMovie extends Model
         return (int) ($rows[0]['watch_count'] ?? 0);
     }
 
-    private function insertWatch(int $idUser, int $idMovie, ?string $watchedAt): void
+    private function insertWatch(int $idUser, int $idMovie, ?string $watchedAt, ?int $idTvtimeImport = null): void
     {
         $sql    = '
-            INSERT INTO user_movie_watched (id_user, id_movie, watched_at)
-            VALUES (:id_user, :id_movie, :watched_at)
+            INSERT INTO user_movie_watched (id_user, id_movie, watched_at, id_tvtime_import)
+            VALUES (:id_user, :id_movie, :watched_at, :id_tvtime_import)
         ';
         $params = array(
-            'id_user'    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_movie'   => array('value' => $idMovie, 'type' => PDO::PARAM_INT),
-            'watched_at' => array('value' => $watchedAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
+            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_movie'         => array('value' => $idMovie, 'type' => PDO::PARAM_INT),
+            'watched_at'       => array('value' => $watchedAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
+            'id_tvtime_import' => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
         );
         $this->mysql->query($sql, $params);
     }

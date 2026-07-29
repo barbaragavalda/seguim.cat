@@ -41,6 +41,56 @@ class UserList extends Model
         return (int) $this->mysql->lastInsertId();
     }
 
+    /**
+     * Same as create(), but tags the new list with TV Time's own list key
+     * (lists-prod-lists.csv's `s_key`) so a *later, separate* import job can
+     * recognize this exact list again via findByTvtimeKey() instead of
+     * creating a duplicate - see Processor::processLists()'s own docblock
+     * on why re-importing needs this.
+     */
+    public function createFromImport(int $idUser, string $name, string $tvtimeSKey, ?string $createdAt = null): int
+    {
+        $sql    = '
+            INSERT INTO user_list (id_user, name, tvtime_s_key, ordering, created)
+            VALUES (:id_user, :name, :tvtime_s_key, :ordering, :created)
+        ';
+        $params = array(
+            'id_user'      => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'name'         => array('value' => $name, 'type' => PDO::PARAM_STR),
+            'tvtime_s_key' => array('value' => $tvtimeSKey, 'type' => PDO::PARAM_STR),
+            'ordering'     => array('value' => $this->nextOrdering($idUser), 'type' => PDO::PARAM_INT),
+            'created'      => array('value' => $createdAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
+        );
+        $this->mysql->query($sql, $params);
+
+        return (int) $this->mysql->lastInsertId();
+    }
+
+    /**
+     * The list a *previous* import job already created for this TV Time
+     * list key, if any - lets a re-import reuse and top up an existing
+     * list (add whatever series/movies are missing from it) instead of
+     * creating a duplicate. Deliberately doesn't touch the list's own
+     * `name` on a match - the user may have renamed it since, and a fresh
+     * import shouldn't silently revert that.
+     */
+    public function findByTvtimeKey(int $idUser, string $tvtimeSKey): ?array
+    {
+        $sql    = '
+            SELECT *
+            FROM user_list
+            WHERE id_user = :id_user AND tvtime_s_key = :tvtime_s_key
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'      => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'tvtime_s_key' => array('value' => $tvtimeSKey, 'type' => PDO::PARAM_STR),
+        );
+        $rows   = $this->mysql->query($sql, $params);
+
+        return $rows[0] ?? null;
+    }
+
     public function rename(int $idUser, int $idUserList, string $name): void
     {
         $sql    = '
@@ -72,9 +122,10 @@ class UserList extends Model
     }
 
     /**
-     * also deletes every user_list_serie row for this list - there's no FK
-     * cascade in this schema (none of this project's tables use one), so
-     * the caller doesn't have to remember to call UserListSerie separately
+     * also deletes every user_list_serie/user_list_movie row for this list -
+     * there's no FK cascade in this schema (none of this project's tables
+     * use one), so the caller doesn't have to remember to call
+     * UserListSerie/UserListMovie separately
      */
     public function delete(int $idUser, int $idUserList): void
     {
@@ -83,6 +134,12 @@ class UserList extends Model
             WHERE id_user_list = :id_user_list
         ';
         $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
+        $this->mysql->query($sql, $params);
+
+        $sql = '
+            DELETE FROM user_list_movie
+            WHERE id_user_list = :id_user_list
+        ';
         $this->mysql->query($sql, $params);
 
         $sql    = '
@@ -99,9 +156,10 @@ class UserList extends Model
     public function removeAllForUser(int $idUser): void
     {
         $sql    = '
-            DELETE ul, uls
+            DELETE ul, uls, ulm
             FROM user_list ul
             LEFT JOIN user_list_serie uls ON uls.id_user_list = ul.id_user_list
+            LEFT JOIN user_list_movie ulm ON ulm.id_user_list = ul.id_user_list
             WHERE ul.id_user = :id_user
         ';
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));

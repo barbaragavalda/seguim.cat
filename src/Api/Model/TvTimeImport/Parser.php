@@ -21,6 +21,22 @@ use Generator;
  * per-episode) simply isn't imported - there's no reliable way to guess
  * *which* specific episodes those were.
  *
+ * Also returns `show_names` (tvdb series id => display name) and
+ * `episode_numbers` (tvdb series id => tvdb episode id => {season, episode})
+ * - unused by the normal happy path (a show/episode id from the export
+ * resolves directly against TheTVDB there), but needed by
+ * Processor::processShows()'s fallback for a show whose tvdb_id no longer
+ * resolves at all (TheTVDB renumbered/merged it - see SeriesMatcher's own
+ * docblock): the name lets it search TheTVDB for the new id, and the
+ * season/episode numbers let watched history be re-matched against that new
+ * id's own (necessarily different) episode ids, instead of the export's now-
+ * dead ones. Built from whichever source rows happen to carry that
+ * information alongside the id/name they're already being read for here -
+ * confirmed empirically that season_number/episode_number ride along with
+ * episode_id in nearly every watch-log source (tracking-prod-records(.csv|
+ * -v2.csv), and every NAMED_WATCH_LOG_FILES entry except
+ * show_seen_episode_latest.csv), so no extra file reads are needed.
+ *
  * rewatched_episode.csv is parsed separately, into `rewatches` rather than
  * folded into `watched` - it's a *count* of extra watches beyond the
  * first (`cpt`, confirmed empirically: every row is a distinct episode_id,
@@ -42,12 +58,21 @@ use Generator;
  * (`"[map[created_at:1.7e+09 id:123 type:series] map[...] ...]"`), parsed
  * here with a regex rather than json_decode() (confirmed empirically: 446
  * objects across the real export's 27 lists, zero mismatches against a raw
- * substring count of "map["). Movie entries in a *list* specifically are
- * still skipped (this app's own custom lists - Api\Model\UserList - stay
- * series-only) - see parseMovies() below for movie tracking/watch history
- * itself, which is in scope. Each object's own `created_at` is a Unix
+ * substring count of "map["). Each object's own `created_at` is a Unix
  * timestamp (unlike every other file's plain datetime string) since that's
  * how TV Time's own backend serialized it.
+ *
+ * A movie entry inside a list has no `id` at all (confirmed empirically -
+ * only `created_at`/`type`/`uuid`), unlike a series entry's direct TheTVDB
+ * `id` - the same `uuid` scheme parseMovies() below already relies on to
+ * group tracking-prod-records.csv's movie rows. $movieUuidNames (built once
+ * per parse() call, from that same file) resolves a list movie's `uuid` to
+ * its `movie_name`, which Processor::processLists() then feeds through
+ * MovieMatcher exactly like the main movie import - a same-titled ambiguous
+ * result is simply left out of the list (no pending-resolution entry for
+ * *list membership* specifically - the movie itself still gets a proper
+ * pending row from the main import if applicable, and can always be added
+ * to the list by hand afterward once resolved).
  *
  * parseMovies() reads tracking-prod-records.csv's `entity_type=movie` rows
  * separately from the episode-watching logic above - a movie has no
@@ -86,24 +111,29 @@ final class Parser
      *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
      *     watched: array<int, array<int, string>>,
      *     rewatches: array<int, array<int, array{cpt: int, at: string}>>,
-     *     lists: array<string, array{name: string, created_at: string, series: array<int, string>}>,
-     *     movies: array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>
+     *     lists: array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>}>,
+     *     movies: array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>,
+     *     show_names: array<int, string>,
+     *     episode_numbers: array<int, array<int, array{season: int, episode: int}>>
      * }
      */
     public function parse(string $dir): array
     {
         [$shows, $nameToId] = $this->parseFollowedShows($dir . '/followed_tv_show.csv');
+        $showNames           = array_flip($nameToId);
+        $episodeNumbers      = array();
 
         $watched = array();
-        $this->mergeTrackingRecords($dir . '/tracking-prod-records.csv', $watched);
-        $this->mergeTrackingRecordsV2($dir . '/tracking-prod-records-v2.csv', $watched);
+        $this->mergeTrackingRecords($dir . '/tracking-prod-records.csv', $watched, $episodeNumbers, $showNames);
+        $this->mergeTrackingRecordsV2($dir . '/tracking-prod-records-v2.csv', $watched, $episodeNumbers, $showNames);
         foreach (self::NAMED_WATCH_LOG_FILES as $file) {
-            $this->mergeNamedWatchLog($dir . '/' . $file, $nameToId, $watched);
+            $this->mergeNamedWatchLog($dir . '/' . $file, $nameToId, $watched, $episodeNumbers);
         }
 
-        $rewatches = $this->parseRewatches($dir . '/rewatched_episode.csv', $nameToId);
-        $lists     = $this->parseLists($dir . '/lists-prod-lists.csv');
-        $movies    = $this->parseMovies($dir . '/tracking-prod-records.csv');
+        $rewatches      = $this->parseRewatches($dir . '/rewatched_episode.csv', $nameToId, $episodeNumbers);
+        $movieUuidNames = $this->parseMovieUuidNames($dir . '/tracking-prod-records.csv');
+        $lists          = $this->parseLists($dir . '/lists-prod-lists.csv', $movieUuidNames);
+        $movies         = $this->parseMovies($dir . '/tracking-prod-records.csv');
 
         // a show with watch history but no row in followed_tv_show.csv at
         // all was unfollowed/deleted in TVTime at some point - still worth
@@ -118,11 +148,13 @@ final class Parser
         }
 
         return array(
-            'shows'     => $shows,
-            'watched'   => $watched,
-            'rewatches' => $rewatches,
-            'lists'     => $lists,
-            'movies'    => $movies,
+            'shows'           => $shows,
+            'watched'         => $watched,
+            'rewatches'       => $rewatches,
+            'lists'           => $lists,
+            'movies'          => $movies,
+            'show_names'      => $showNames,
+            'episode_numbers' => $episodeNumbers,
         );
     }
 
@@ -153,8 +185,10 @@ final class Parser
 
     /**
      * @param array<int, array<int, string>> $watched
+     * @param array<int, array<int, array{season: int, episode: int}>> $episodeNumbers
+     * @param array<int, string> $showNames
      */
-    private function mergeTrackingRecords(string $path, array &$watched): void
+    private function mergeTrackingRecords(string $path, array &$watched, array &$episodeNumbers, array &$showNames): void
     {
         foreach ($this->readCsv($path) as $row) {
             if (($row['type'] ?? '') !== 'watch' || ($row['entity_type'] ?? '') !== 'episode') {
@@ -166,13 +200,17 @@ final class Parser
                 continue;
             }
             $this->recordWatch($watched, $seriesId, $episodeId, $row['created_at'] ?? null);
+            $this->recordEpisodeNumber($episodeNumbers, $seriesId, $episodeId, $row['season_number'] ?? null, $row['episode_number'] ?? null);
+            $this->recordShowName($showNames, $seriesId, $row['series_name'] ?? null);
         }
     }
 
     /**
      * @param array<int, array<int, string>> $watched
+     * @param array<int, array<int, array{season: int, episode: int}>> $episodeNumbers
+     * @param array<int, string> $showNames
      */
-    private function mergeTrackingRecordsV2(string $path, array &$watched): void
+    private function mergeTrackingRecordsV2(string $path, array &$watched, array &$episodeNumbers, array &$showNames): void
     {
         foreach ($this->readCsv($path) as $row) {
             if (!str_starts_with($row['key'] ?? '', 'watch-episode-')) {
@@ -184,14 +222,17 @@ final class Parser
                 continue;
             }
             $this->recordWatch($watched, $seriesId, $episodeId, $row['created_at'] ?? null);
+            $this->recordEpisodeNumber($episodeNumbers, $seriesId, $episodeId, $row['season_number'] ?? null, $row['episode_number'] ?? null);
+            $this->recordShowName($showNames, $seriesId, $row['series_name'] ?? null);
         }
     }
 
     /**
      * @param array<string, int>              $nameToId
      * @param array<int, array<int, string>>  $watched
+     * @param array<int, array<int, array{season: int, episode: int}>> $episodeNumbers
      */
-    private function mergeNamedWatchLog(string $path, array $nameToId, array &$watched): void
+    private function mergeNamedWatchLog(string $path, array $nameToId, array &$watched, array &$episodeNumbers): void
     {
         foreach ($this->readCsv($path) as $row) {
             $tvdbId = isset($row['tv_show_id']) && $row['tv_show_id'] !== ''
@@ -202,14 +243,19 @@ final class Parser
                 continue;
             }
             $this->recordWatch($watched, $tvdbId, $episodeId, $row['created_at'] ?? null);
+            // only present in most NAMED_WATCH_LOG_FILES, not
+            // show_seen_episode_latest.csv - recordEpisodeNumber() no-ops
+            // when either is missing/blank
+            $this->recordEpisodeNumber($episodeNumbers, $tvdbId, $episodeId, $row['episode_season_number'] ?? null, $row['episode_number'] ?? null);
         }
     }
 
     /**
      * @param array<string, int> $nameToId
+     * @param array<int, array<int, array{season: int, episode: int}>> $episodeNumbers
      * @return array<int, array<int, array{cpt: int, at: string}>>
      */
-    private function parseRewatches(string $path, array $nameToId): array
+    private function parseRewatches(string $path, array $nameToId, array &$episodeNumbers): array
     {
         $rewatches = array();
         foreach ($this->readCsv($path) as $row) {
@@ -223,16 +269,49 @@ final class Parser
                 'cpt' => $cpt,
                 'at'  => ($row['created_at'] ?? '') !== '' ? $row['created_at'] : date('Y-m-d H:i:s'),
             );
+            $this->recordEpisodeNumber($episodeNumbers, $tvdbId, $episodeId, $row['episode_season_number'] ?? null, $row['episode_number'] ?? null);
         }
 
         return $rewatches;
     }
 
     /**
-     * @return array<string, array{name: string, created_at: string, series: array<int, string>}>
+     * first-seen wins, same as recordWatch() - every source agrees on a
+     * given episode's season/episode number in practice, so this is just
+     * about picking up the number from whichever source has it
+     *
+     * @param array<int, array<int, array{season: int, episode: int}>> $episodeNumbers
      */
-    private function parseLists(string $path): array
+    private function recordEpisodeNumber(array &$episodeNumbers, int $seriesId, int $episodeId, ?string $season, ?string $episode): void
     {
+        if ($season === null || $season === '' || $episode === null || $episode === '') {
+            return;
+        }
+        if (isset($episodeNumbers[$seriesId][$episodeId])) {
+            return;
+        }
+        $episodeNumbers[$seriesId][$episodeId] = array('season' => (int) $season, 'episode' => (int) $episode);
+    }
+
+    /**
+     * @param array<int, string> $showNames
+     */
+    private function recordShowName(array &$showNames, int $seriesId, ?string $name): void
+    {
+        if ($name === null || $name === '' || isset($showNames[$seriesId])) {
+            return;
+        }
+        $showNames[$seriesId] = $name;
+    }
+
+    /**
+     * @param array<string, string> $movieUuidNames uuid => movie_name, see this class' own docblock
+     * @return array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>}>
+     */
+    private function parseLists(string $path, array $movieUuidNames): array
+    {
+        $realNames = $this->parseListNames($path);
+
         $lists = array();
         foreach ($this->readCsv($path) as $row) {
             $sKey = $row['s_key'] ?? '';
@@ -241,39 +320,191 @@ final class Parser
             }
 
             $series = array();
+            $movies = array();
             foreach ($this->parseListObjects($row['objects'] ?? '') as $object) {
-                $tvdbId = (int) ($object['id'] ?? 0);
-                if (($object['type'] ?? '') !== 'series' || $tvdbId === 0) {
-                    continue;
-                }
+                $objectType = $object['type'] ?? '';
                 // per-item created_at is a Unix timestamp here, unlike the
                 // list's own created_at column just below (a plain
                 // datetime string, same as every other file)
-                $series[$tvdbId] = isset($object['created_at'])
+                $addedAt = isset($object['created_at'])
                     ? date('Y-m-d H:i:s', (int) (float) $object['created_at'])
                     : date('Y-m-d H:i:s');
+
+                if ($objectType === 'series') {
+                    $tvdbId = (int) ($object['id'] ?? 0);
+                    if ($tvdbId !== 0) {
+                        $series[$tvdbId] = $addedAt;
+                    }
+                } elseif ($objectType === 'movie') {
+                    $name = $movieUuidNames[$object['uuid'] ?? ''] ?? null;
+                    // earliest wins, same "first time it was genuinely
+                    // added" reasoning as recordWatch()
+                    if ($name !== null && (!isset($movies[$name]) || $addedAt < $movies[$name])) {
+                        $movies[$name] = $addedAt;
+                    }
+                }
             }
-            if (empty($series)) {
-                // movies-only (out of scope) or genuinely empty - nothing
-                // importable, don't create a pointless blank list
+            if (empty($series) && empty($movies)) {
                 continue;
             }
 
             $createdAt = ($row['created_at'] ?? '') !== '' ? $row['created_at'] : date('Y-m-d H:i:s');
-            $name      = trim($row['name'] ?? '');
+            // the list's own `name` column is blank for most real lists
+            // (confirmed empirically: 23 of 27) - $realNames (from the
+            // export's own "collection" meta-row) is the actual display
+            // name TV Time's own app shows the user, and is tried first
+            $name = $realNames[$sKey] ?? trim($row['name'] ?? '');
             if ($name === '') {
-                // most of a real export's lists turn out to be nameless -
-                // confirmed empirically (23 of 27) - likely TV Time's own
-                // auto-generated buckets rather than something the user
-                // named themselves, but still worth importing (user's own
-                // call) with a placeholder rather than silently blank
                 $name = 'List from ' . substr($createdAt, 0, 10);
             }
 
-            $lists[$sKey] = array('name' => $name, 'created_at' => $createdAt, 'series' => $series);
+            $lists[$sKey] = array('name' => $name, 'created_at' => $createdAt, 'series' => $series, 'movies' => $movies);
         }
 
         return $lists;
+    }
+
+    /**
+     * @return array<string, string> uuid => movie_name
+     */
+    private function parseMovieUuidNames(string $path): array
+    {
+        $names = array();
+        foreach ($this->readCsv($path) as $row) {
+            if (($row['entity_type'] ?? '') !== 'movie') {
+                continue;
+            }
+            $uuid = $row['uuid'] ?? '';
+            $name = trim($row['movie_name'] ?? '');
+            if ($uuid === '' || $name === '' || isset($names[$uuid])) {
+                continue;
+            }
+            $names[$uuid] = $name;
+        }
+
+        return $names;
+    }
+
+    /**
+     * lists-prod-lists.csv carries a single extra row (`s_key = "collection"`,
+     * `type` blank) whose own `lists` column is a *second*, differently-
+     * shaped Go-`fmt.Sprint()` dump: one `map[...]` per list, each with its
+     * own `s_key`/`name`/`posters`/`fanart`/... - this is where a list's real
+     * display name actually lives (confirmed empirically: the per-list row's
+     * own `name` column is blank for the vast majority of real lists, but
+     * this index has a name for every one of them). Needs its own parser
+     * (splitTopLevelMaps()/parseMapContent()) rather than parseListObjects()'s
+     * simple regex, because these entries nest arrays inside themselves
+     * (`posters:[url1 url2]`) - a naive `[^\]]*` match would stop at the
+     * array's own closing `]`, truncating everything after it
+     *
+     * @return array<string, string> s_key => real display name
+     */
+    private function parseListNames(string $path): array
+    {
+        $names = array();
+        foreach ($this->readCsv($path) as $row) {
+            if (($row['s_key'] ?? '') !== 'collection') {
+                continue;
+            }
+            foreach ($this->splitTopLevelMaps($row['lists'] ?? '') as $entry) {
+                $kv   = $this->parseMapContent($entry);
+                $sKey = $kv['s_key'] ?? '';
+                $name = trim($kv['name'] ?? '');
+                if ($sKey !== '' && $name !== '' && $name !== '<nil>') {
+                    $names[$sKey] = $name;
+                }
+            }
+            break;
+        }
+
+        return $names;
+    }
+
+    /**
+     * splits a Go-printed `[map[...] map[...] ...]` blob into each map's raw
+     * inner content, tracking bracket depth so a nested array inside one
+     * entry (`posters:[...]`) doesn't get mistaken for that entry's own
+     * closing bracket
+     *
+     * @return array<int, string>
+     */
+    private function splitTopLevelMaps(string $raw): array
+    {
+        $raw = trim($raw);
+        if (str_starts_with($raw, '[') && str_ends_with($raw, ']')) {
+            $raw = substr($raw, 1, -1);
+        }
+
+        $results = array();
+        $i       = 0;
+        $n       = strlen($raw);
+        while ($i < $n) {
+            $pos = strpos($raw, 'map[', $i);
+            if ($pos === false) {
+                break;
+            }
+            $start = $pos + 4;
+            $depth = 1;
+            $j     = $start;
+            while ($j < $n && $depth > 0) {
+                if ($raw[$j] === '[') {
+                    $depth++;
+                } elseif ($raw[$j] === ']') {
+                    $depth--;
+                }
+                $j++;
+            }
+            $results[] = substr($raw, $start, $j - 1 - $start);
+            $i         = $j;
+        }
+
+        return $results;
+    }
+
+    /**
+     * splits one map[...]'s inner content into key => value pairs, the same
+     * bracket-depth-aware way as splitTopLevelMaps() - a value can itself be
+     * a nested array (`posters:[url1 url2]`), so a plain `explode(' ')` (as
+     * parseListObjects() uses for the simpler, never-nested per-item
+     * objects) would wrongly split it apart
+     *
+     * @return array<string, string>
+     */
+    private function parseMapContent(string $content): array
+    {
+        $keyStarts = array();
+        $depth     = 0;
+        $n         = strlen($content);
+        for ($i = 0; $i < $n; $i++) {
+            $c = $content[$i];
+            if ($c === '[') {
+                $depth++;
+            } elseif ($c === ']') {
+                $depth--;
+            } elseif ($depth === 0 && $c === ':') {
+                $j = $i - 1;
+                while ($j >= 0 && (ctype_alnum($content[$j]) || $content[$j] === '_')) {
+                    $j--;
+                }
+                $keyStart = $j + 1;
+                if ($keyStart === 0 || $content[$keyStart - 1] === ' ') {
+                    $keyStarts[] = array($keyStart, $i);
+                }
+            }
+        }
+
+        $kv    = array();
+        $count = count($keyStarts);
+        for ($idx = 0; $idx < $count; $idx++) {
+            [$keyStart, $colonPos] = $keyStarts[$idx];
+            $key                   = substr($content, $keyStart, $colonPos - $keyStart);
+            $valueStart            = $colonPos + 1;
+            $valueEnd              = $idx + 1 < $count ? $keyStarts[$idx + 1][0] - 1 : $n;
+            $kv[$key]               = trim(substr($content, $valueStart, $valueEnd - $valueStart));
+        }
+
+        return $kv;
     }
 
     /**

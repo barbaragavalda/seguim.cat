@@ -638,6 +638,12 @@ CREATE TABLE `user_movie_watched` (
   `id_user_movie_watched` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_movie` mediumint(8) unsigned NOT NULL,
+  -- same import-provenance tag as user_episode_watched.id_tvtime_import -
+  -- see its own comment. Here Api\Model\WatchedMovie::syncRewatchFromImport()
+  -- dedupes by this plus the row's own exact watched_at (a movie rewatch
+  -- carries a real distinct timestamp per event, unlike an episode
+  -- rewatch's bare count - see Api\Model\TvTimeImport\Parser's own docblock)
+  `id_tvtime_import` mediumint(8) unsigned DEFAULT NULL,
   `watched_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_movie_watched`) USING BTREE,
   KEY `id_user_movie` (`id_user`, `id_movie`)
@@ -674,6 +680,12 @@ CREATE TABLE `user_episode_watched` (
   `id_user_episode_watched` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_episode` mediumint(8) unsigned NOT NULL,
+  -- which TV Time import job (Api\Model\TvTimeImport) created this row, if
+  -- any - NULL for a row from the user actually watching something in the
+  -- app. Lets Api\Model\WatchedEpisode::syncRewatchesFromImport() tell "a
+  -- previous import already recorded this rewatch" apart from "the user
+  -- rewatched again since", so re-running an import doesn't double-count
+  `id_tvtime_import` mediumint(8) unsigned DEFAULT NULL,
   `watched_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_episode_watched`) USING BTREE,
   KEY `id_user_episode` (`id_user`, `id_episode`)
@@ -765,6 +777,84 @@ CREATE TABLE `tvtime_import` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
+-- Table structure for movie_import_pending (a movie title
+-- Api\Model\TvTimeImport\MovieMatcher couldn't confidently resolve on its
+-- own - either several TheTVDB movies share that exact title with no way to
+-- tell them apart, or nothing matched at all. Rather than silently skipping
+-- it (or worse, guessing), the candidates TheTVDB did return are stored here
+-- for the user to resolve by hand later - see Api\Model\MovieImportPending
+-- and the app's own pending-movies resolution screen)
+-- ----------------------------
+DROP TABLE IF EXISTS `movie_import_pending`;
+CREATE TABLE `movie_import_pending` (
+  `id_movie_import_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_tvtime_import` mediumint(8) unsigned NOT NULL,
+  `movie_name` varchar(255) NOT NULL,
+  `expected_year` varchar(4) DEFAULT NULL,
+  -- the same per-entry data Processor::processMovies() would otherwise
+  -- apply immediately on a confident match (see Parser::parseMovies()) -
+  -- snapshotted here since the import's own zip/extracted CSVs are deleted
+  -- once the job finishes, so resolving this later can't re-parse them
+  `watchlist_created_at` timestamp NULL DEFAULT NULL,
+  `watched_at` timestamp NULL DEFAULT NULL,
+  -- JSON array of watch timestamps, one per confirmed extra watch (see
+  -- Parser's own docblock on why each 'rewatch' row is a real, separately
+  -- timestamped event)
+  `rewatch_at` text,
+  -- JSON array of up to 5 {tvdb_id, name, year, image} - MovieMatcher's own
+  -- candidates at import time, so the resolution screen doesn't need a
+  -- fresh TheTVDB search (and stays stable even if a later search re-ranks)
+  `candidates` text NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_movie_import_pending`) USING BTREE,
+  -- re-running an import (or a second import later) that hits the same
+  -- still-unresolved title updates this row in place instead of piling up
+  -- duplicates
+  UNIQUE KEY `id_user_movie_name` (`id_user`, `movie_name`),
+  KEY `id_tvtime_import` (`id_tvtime_import`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for series_import_pending (a show TV Time's own tv_show_id
+-- no longer resolves on TheTVDB at all - TheTVDB renumbers/merges series ids
+-- over time, so the export's old id is dead while the same show is findable
+-- by name under a new one; Api\Model\TvTimeImport\SeriesMatcher's own
+-- name search either found more than one same-titled candidate with no way
+-- to tell them apart, or found nothing. Mirrors movie_import_pending above,
+-- but the watched/rewatch snapshot is keyed by season+episode NUMBER rather
+-- than TheTVDB episode id - the old episode ids are exactly as dead as the
+-- show id itself once a new id is picked, but season/episode numbers still
+-- line up against the new id's own freshly-synced episode list, letting
+-- watch history be recovered instead of just the show identity)
+-- ----------------------------
+DROP TABLE IF EXISTS `series_import_pending`;
+CREATE TABLE `series_import_pending` (
+  `id_series_import_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_tvtime_import` mediumint(8) unsigned NOT NULL,
+  `show_name` varchar(255) NOT NULL,
+  `archived` tinyint(1) NOT NULL DEFAULT 0,
+  `removed` tinyint(1) NOT NULL DEFAULT 0,
+  `watchlist_created_at` timestamp NULL DEFAULT NULL,
+  -- JSON array of {season, episode, at} - every watched episode this show
+  -- had under its old (dead) tvdb_id, snapshotted since the import's own
+  -- zip/extracted CSVs are deleted once the job finishes
+  `watched_episodes` text NOT NULL,
+  -- JSON array of {season, episode, cpt, at} - see Parser's own docblock on
+  -- rewatches only ever being a count+single timestamp per episode, never a
+  -- discrete per-event log the way movie rewatches are
+  `rewatch_episodes` text NOT NULL,
+  -- JSON array of up to 5 {tvdb_id, name, year, image} - SeriesMatcher's own
+  -- candidates at import time
+  `candidates` text NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_series_import_pending`) USING BTREE,
+  UNIQUE KEY `id_user_show_name` (`id_user`, `show_name`),
+  KEY `id_tvtime_import` (`id_tvtime_import`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
 -- Table structure for user_list (custom user-curated series lists, e.g.
 -- imported from TV Time's own "lists" feature - see Api\Model\UserList).
 -- `ordering` uses large gaps (1000 per slot) rather than dense 0..n-1
@@ -781,9 +871,18 @@ CREATE TABLE `user_list` (
   `id_user_list` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `name` varchar(255) NOT NULL,
+  -- lists-prod-lists.csv's own `s_key` for a list created by the TV Time
+  -- importer (Api\Model\TvTimeImport\Processor) - NULL for a list the user
+  -- created by hand. Lets a *later, separate* import job recognize this
+  -- exact list again (Api\Model\UserList::findByTvtimeKey()) instead of
+  -- creating a duplicate on every re-import - MySQL's own unique-key
+  -- semantics treat each NULL as distinct, so hand-created lists never
+  -- collide with each other here
+  `tvtime_s_key` varchar(64) DEFAULT NULL,
   `ordering` int(10) NOT NULL DEFAULT 0,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_list`) USING BTREE,
+  UNIQUE KEY `id_user_tvtime_s_key` (`id_user`, `tvtime_s_key`),
   KEY `id_user_ordering` (`id_user`, `ordering`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -800,6 +899,23 @@ CREATE TABLE `user_list_serie` (
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_list_serie`) USING BTREE,
   UNIQUE KEY `id_user_list_serie_lookup` (`id_user_list`, `id_serie`),
+  KEY `id_user_list_ordering` (`id_user_list`, `ordering`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_list_movie (a list's own movies, own ordering
+-- within that list - same gap-based scheme as user_list_serie above; a
+-- list's series and movies are ordered independently of each other)
+-- ----------------------------
+DROP TABLE IF EXISTS `user_list_movie`;
+CREATE TABLE `user_list_movie` (
+  `id_user_list_movie` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user_list` mediumint(8) unsigned NOT NULL,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `ordering` int(10) NOT NULL DEFAULT 0,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user_list_movie`) USING BTREE,
+  UNIQUE KEY `id_user_list_movie_lookup` (`id_user_list`, `id_movie`),
   KEY `id_user_list_ordering` (`id_user_list`, `ordering`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -4,14 +4,19 @@ namespace Api\Model\TvTimeImport;
 
 use Api\Model\Episode;
 use Api\Model\Movie;
+use Api\Model\MovieImportPending;
 use Api\Model\MovieWatchlist;
 use Api\Model\Series;
+use Api\Model\SeriesImportPending;
 use Api\Model\TheTvdb\Client;
+use Api\Model\TheTvdb\Languages;
 use Api\Model\UserList;
+use Api\Model\UserListMovie;
 use Api\Model\UserListSerie;
 use Api\Model\WatchedEpisode;
 use Api\Model\WatchedMovie;
 use Api\Model\Watchlist;
+use Webservice\Model\User;
 
 /**
  * Applies a parsed TV Time export (see Parser) to a real account: syncs
@@ -37,6 +42,18 @@ use Api\Model\Watchlist;
  * first" reasoning, and use their own name-based resume key
  * (Api\Model\TvTimeImport\MovieMatcher - there's no TheTVDB id for a movie
  * in the export the way there is for a series).
+ *
+ * Safe to run more than once for the same account - each upload creates a
+ * brand new Api\Model\TvTimeImport job with no memory of any earlier one
+ * (a user re-exporting from TV Time, or just re-uploading, is a normal
+ * thing to do), so every write this class makes is either a genuine upsert
+ * (Watchlist/MovieWatchlist's own addFromImport(), WatchedEpisode/
+ * WatchedMovie's own markWatched()) or has its own explicit dedup:
+ * UserList lookup-or-create by TV Time's own list key (see
+ * UserList::findByTvtimeKey()) instead of blindly creating a duplicate
+ * list, and WatchedEpisode::syncRewatchesFromImport()/WatchedMovie::
+ * syncRewatchFromImport() instead of a raw markRewatched() loop, which
+ * would otherwise double-count every rewatch on a second import.
  */
 final class Processor
 {
@@ -53,7 +70,9 @@ final class Processor
      *     watched: array<int, array<int, string>>,
      *     rewatches: array<int, array<int, array{cpt: int, at: string}>>,
      *     lists: array<string, array{name: string, created_at: string, series: array<int, string>}>,
-     *     movies: array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>
+     *     movies: array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>,
+     *     show_names: array<int, string>,
+     *     episode_numbers: array<int, array<int, array{season: int, episode: int}>>
      * } $parsed
      * @param array<int>    $alreadyDoneShows  show ids a previous batch already handled
      * @param array<string> $alreadyDoneLists  list s_keys a previous batch already handled
@@ -64,47 +83,56 @@ final class Processor
      *     done_movie_keys: array<string>,
      *     shows_synced: int,
      *     shows_failed: array<int>,
+     *     shows_pending: int,
      *     episodes_watched: int,
      *     episodes_rewatched: int,
      *     lists_created: int,
      *     list_series_added: int,
+     *     list_movies_added: int,
      *     movies_synced: int,
      *     movies_unmatched: array<string>,
+     *     movies_pending: int,
      *     movies_watched: int,
      *     movies_rewatched: int,
      *     finished: bool
      * }
      */
-    public function processBatch(int $idUser, array $parsed, array $alreadyDoneShows, array $alreadyDoneLists, array $alreadyDoneMovies): array
+    public function processBatch(int $idUser, int $idTvtimeImport, array $parsed, array $alreadyDoneShows, array $alreadyDoneLists, array $alreadyDoneMovies): array
     {
-        $deadline = microtime(true) + self::TIME_BUDGET_SECONDS;
+        $deadline         = microtime(true) + self::TIME_BUDGET_SECONDS;
+        // resolved once per batch (not once per matcher/candidate) - see
+        // resolveTvdbLanguage()'s own docblock for why this needs a real
+        // DB lookup rather than something already on hand here
+        $tvdbLanguageCode = $this->resolveTvdbLanguage($idUser);
 
-        [$doneShowIds, $showsSynced, $showsFailed, $episodesWatched, $episodesRewatched, $showsFinished]
-            = $this->processShows($idUser, $parsed, $alreadyDoneShows, $deadline);
+        [$doneShowIds, $showsSynced, $showsFailed, $showsPending, $episodesWatched, $episodesRewatched, $showsFinished]
+            = $this->processShows($idUser, $idTvtimeImport, $parsed, $alreadyDoneShows, $deadline, $tvdbLanguageCode);
 
         $doneListKeys      = array();
         $listsCreated      = 0;
         $listSeriesAdded   = 0;
+        $listMoviesAdded   = 0;
         $listsFinished     = true;
         // only start lists once every show is done - shows are the far
         // larger, more TheTVDB-call-heavy piece, and most list series are
         // already synced by the time shows finish anyway
         if ($showsFinished) {
-            [$doneListKeys, $listsCreated, $listSeriesAdded, $listsFinished]
-                = $this->processLists($idUser, $parsed, $alreadyDoneLists, $deadline);
+            [$doneListKeys, $listsCreated, $listSeriesAdded, $listMoviesAdded, $listsFinished]
+                = $this->processLists($idUser, $parsed, $alreadyDoneLists, $deadline, $tvdbLanguageCode);
         }
 
         $doneMovieKeys   = array();
         $moviesSynced    = 0;
         $moviesUnmatched = array();
+        $moviesPending   = 0;
         $moviesWatched   = 0;
         $moviesRewatched = 0;
         $moviesFinished  = true;
         // movies only start once shows AND lists are both done, same
         // "biggest piece first" reasoning as lists above
         if ($showsFinished && $listsFinished) {
-            [$doneMovieKeys, $moviesSynced, $moviesUnmatched, $moviesWatched, $moviesRewatched, $moviesFinished]
-                = $this->processMovies($idUser, $parsed, $alreadyDoneMovies, $deadline);
+            [$doneMovieKeys, $moviesSynced, $moviesUnmatched, $moviesPending, $moviesWatched, $moviesRewatched, $moviesFinished]
+                = $this->processMovies($idUser, $idTvtimeImport, $parsed, $alreadyDoneMovies, $deadline, $tvdbLanguageCode);
         }
 
         return array(
@@ -113,12 +141,15 @@ final class Processor
             'done_movie_keys'    => $doneMovieKeys,
             'shows_synced'       => $showsSynced,
             'shows_failed'       => $showsFailed,
+            'shows_pending'      => $showsPending,
             'episodes_watched'   => $episodesWatched,
             'episodes_rewatched' => $episodesRewatched,
             'lists_created'      => $listsCreated,
             'list_series_added'  => $listSeriesAdded,
+            'list_movies_added'  => $listMoviesAdded,
             'movies_synced'      => $moviesSynced,
             'movies_unmatched'   => $moviesUnmatched,
+            'movies_pending'     => $moviesPending,
             'movies_watched'     => $moviesWatched,
             'movies_rewatched'   => $moviesRewatched,
             'finished'           => $showsFinished && $listsFinished && $moviesFinished,
@@ -126,16 +157,43 @@ final class Processor
     }
 
     /**
-     * @return array{0: array<int>, 1: int, 2: array<int>, 3: int, 4: int, 5: bool}
+     * The importing user's own saved language preference (`user.
+     * id_appacman_lang`, same field Api\Controller\Account\UpdateLanguage
+     * writes) - a pending series/movie's candidate names should show up in
+     * whatever language that user actually reads the app in, falling back
+     * to English when TheTVDB has no translation for it, rather than
+     * always showing English regardless (this is a background/cron-
+     * triggered process, not a live request, so there's no
+     * Core\Utils\Config::getLanguage() request-language to reuse - it has
+     * to be looked up per user instead).
      */
-    private function processShows(int $idUser, array $parsed, array $alreadyDone, float $deadline): array
+    private function resolveTvdbLanguage(int $idUser): string
+    {
+        $user = new User();
+        if (!$user->loadWithID($idUser)) {
+            return 'eng';
+        }
+        $idAppacmanLang = $user->getInfo()['id_appacman_lang'] ?? null;
+        if ($idAppacmanLang === null) {
+            return 'eng';
+        }
+        return Languages::tvdbCode((int) $idAppacmanLang) ?? 'eng';
+    }
+
+    /**
+     * @return array{0: array<int>, 1: int, 2: array<int>, 3: int, 4: int, 5: int, 6: bool}
+     */
+    private function processShows(int $idUser, int $idTvtimeImport, array $parsed, array $alreadyDone, float $deadline, string $tvdbLanguageCode): array
     {
         $watchlist      = new Watchlist();
         $watchedEpisode = new WatchedEpisode();
+        $seriesMatcher  = new SeriesMatcher($this->client, $tvdbLanguageCode);
+        $pendingImport  = new SeriesImportPending();
 
         $doneShowIds       = array();
         $showsSynced       = 0;
         $showsFailed       = array();
+        $showsPending      = 0;
         $episodesWatched   = 0;
         $episodesRewatched = 0;
         $finished          = true;
@@ -151,7 +209,30 @@ final class Processor
 
             $info = (new Series())->sync($tvdbSeriesId, $this->client);
             if (empty($info)) {
-                $showsFailed[] = $tvdbSeriesId;
+                $handled = $this->processRenamedShow(
+                    $idUser,
+                    $idTvtimeImport,
+                    $tvdbSeriesId,
+                    $flags,
+                    $parsed,
+                    $seriesMatcher,
+                    $pendingImport,
+                    $watchlist,
+                    $watchedEpisode
+                );
+                if ($handled === null) {
+                    // no show name survived anywhere in the export for this
+                    // id - nothing to search TheTVDB with, genuinely a dead
+                    // end (confirmed empirically: a couple of the user's own
+                    // real shows_failed entries have no name anywhere)
+                    $showsFailed[] = $tvdbSeriesId;
+                } elseif ($handled['pending']) {
+                    $showsPending++;
+                } else {
+                    $showsSynced++;
+                    $episodesWatched   += $handled['episodes_watched'];
+                    $episodesRewatched += $handled['episodes_rewatched'];
+                }
                 $doneShowIds[] = $tvdbSeriesId;
                 continue;
             }
@@ -178,35 +259,168 @@ final class Processor
             // above for the same episode - TV Time's own cpt still means
             // "watched this many extra times", even when the export's
             // per-episode logs never captured the very first watch (see
-            // Parser's own docblock on that gap)
+            // Parser's own docblock on that gap). syncRewatchesFromImport()
+            // rather than a raw markRewatched() loop - see its own docblock
+            // on why a re-import (a separate, later job) needs this to stay
+            // idempotent
             foreach ($parsed['rewatches'][$tvdbSeriesId] ?? array() as $tvdbEpisodeId => $rewatch) {
                 $idEpisode = $idEpisodeByTvdbId[$tvdbEpisodeId] ?? null;
                 if ($idEpisode === null) {
                     continue;
                 }
-                for ($i = 0; $i < $rewatch['cpt']; $i++) {
-                    $watchedEpisode->markRewatched($idUser, (int) $idEpisode, $rewatch['at']);
-                    $episodesRewatched++;
-                }
+                $episodesRewatched += $watchedEpisode->syncRewatchesFromImport(
+                    $idUser,
+                    (int) $idEpisode,
+                    $rewatch['cpt'],
+                    $rewatch['at'],
+                    $idTvtimeImport
+                );
             }
 
             $doneShowIds[] = $tvdbSeriesId;
         }
 
-        return array($doneShowIds, $showsSynced, $showsFailed, $episodesWatched, $episodesRewatched, $finished);
+        return array($doneShowIds, $showsSynced, $showsFailed, $showsPending, $episodesWatched, $episodesRewatched, $finished);
     }
 
     /**
-     * @return array{0: array<string>, 1: int, 2: int, 3: bool}
+     * A show's own tvdb_id from the export came back empty from
+     * Series::sync() - TheTVDB has renumbered/merged it since the export was
+     * made (see SeriesMatcher's own docblock). Falls back to a name search:
+     * a single confident match is synced and applied immediately, same as
+     * the normal path; anything else (several same-titled candidates, or
+     * none) is queued as a SeriesImportPending row instead of guessed.
+     *
+     * @param array{archived: bool, removed: bool, created_at: ?string} $flags
+     * @return null|array{pending: bool, episodes_watched: int, episodes_rewatched: int}
+     *         null if no show name survived anywhere in the export for this id
      */
-    private function processLists(int $idUser, array $parsed, array $alreadyDone, float $deadline): array
+    private function processRenamedShow(
+        int $idUser,
+        int $idTvtimeImport,
+        int $oldTvdbSeriesId,
+        array $flags,
+        array $parsed,
+        SeriesMatcher $seriesMatcher,
+        SeriesImportPending $pendingImport,
+        Watchlist $watchlist,
+        WatchedEpisode $watchedEpisode
+    ): ?array {
+        $showName = $parsed['show_names'][$oldTvdbSeriesId] ?? null;
+        if ($showName === null) {
+            return null;
+        }
+
+        $watchedEntries  = $this->toEpisodeNumberEntries($parsed['watched'][$oldTvdbSeriesId] ?? array(), $parsed['episode_numbers'][$oldTvdbSeriesId] ?? array());
+        $rewatchEntries  = $this->toRewatchEpisodeNumberEntries($parsed['rewatches'][$oldTvdbSeriesId] ?? array(), $parsed['episode_numbers'][$oldTvdbSeriesId] ?? array());
+
+        $result = $seriesMatcher->match($showName);
+        if ($result['status'] !== 'matched') {
+            $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $showName, $flags, $watchedEntries, $rewatchEntries, $result['candidates']);
+            return array('pending' => true, 'episodes_watched' => 0, 'episodes_rewatched' => 0);
+        }
+
+        $newTvdbSeriesId = $result['tvdb_id'];
+        $info = (new Series())->sync($newTvdbSeriesId, $this->client);
+        if (empty($info)) {
+            // the match came from TheTVDB's own search a moment ago, so this
+            // is a rare transient failure - still worth a pending entry
+            // rather than losing the show's history outright
+            $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $showName, $flags, $watchedEntries, $rewatchEntries, array());
+            return array('pending' => true, 'episodes_watched' => 0, 'episodes_rewatched' => 0);
+        }
+
+        $episodeRows = (new Episode())->syncForSeries($info['id_serie'], $newTvdbSeriesId, $this->client);
+        $idEpisodeBySeasonEpisode = array();
+        foreach ($episodeRows as $episodeRow) {
+            $key = $episodeRow['season_number'] . '.' . $episodeRow['episode_number'];
+            $idEpisodeBySeasonEpisode[$key] = $episodeRow['id_episode'];
+        }
+
+        $watchlist->addFromImport($idUser, $info['id_serie'], $flags['archived'], $flags['removed'], $flags['created_at']);
+
+        $episodesWatched = 0;
+        foreach ($watchedEntries as $entry) {
+            $idEpisode = $idEpisodeBySeasonEpisode[$entry['season'] . '.' . $entry['episode']] ?? null;
+            if ($idEpisode === null) {
+                continue;
+            }
+            $watchedEpisode->markWatched($idUser, (int) $idEpisode, $entry['at']);
+            $episodesWatched++;
+        }
+
+        $episodesRewatched = 0;
+        foreach ($rewatchEntries as $entry) {
+            $idEpisode = $idEpisodeBySeasonEpisode[$entry['season'] . '.' . $entry['episode']] ?? null;
+            if ($idEpisode === null) {
+                continue;
+            }
+            $episodesRewatched += $watchedEpisode->syncRewatchesFromImport(
+                $idUser,
+                (int) $idEpisode,
+                $entry['cpt'],
+                $entry['at'],
+                $idTvtimeImport
+            );
+        }
+
+        return array('pending' => false, 'episodes_watched' => $episodesWatched, 'episodes_rewatched' => $episodesRewatched);
+    }
+
+    /**
+     * @param array<int, string> $watched tvdb episode id => watched_at
+     * @param array<int, array{season: int, episode: int}> $episodeNumbers tvdb episode id => {season, episode}
+     * @return array<int, array{season: int, episode: int, at: string}>
+     */
+    private function toEpisodeNumberEntries(array $watched, array $episodeNumbers): array
+    {
+        $entries = array();
+        foreach ($watched as $tvdbEpisodeId => $watchedAt) {
+            $numbers = $episodeNumbers[$tvdbEpisodeId] ?? null;
+            if ($numbers === null) {
+                // no season/episode number survived for this one specific
+                // episode anywhere in the export - can't be re-matched
+                // against a different id's episode list, so it's dropped
+                // rather than guessed
+                continue;
+            }
+            $entries[] = array('season' => $numbers['season'], 'episode' => $numbers['episode'], 'at' => $watchedAt);
+        }
+        return $entries;
+    }
+
+    /**
+     * @param array<int, array{cpt: int, at: string}> $rewatches tvdb episode id => {cpt, at}
+     * @param array<int, array{season: int, episode: int}> $episodeNumbers tvdb episode id => {season, episode}
+     * @return array<int, array{season: int, episode: int, cpt: int, at: string}>
+     */
+    private function toRewatchEpisodeNumberEntries(array $rewatches, array $episodeNumbers): array
+    {
+        $entries = array();
+        foreach ($rewatches as $tvdbEpisodeId => $rewatch) {
+            $numbers = $episodeNumbers[$tvdbEpisodeId] ?? null;
+            if ($numbers === null) {
+                continue;
+            }
+            $entries[] = array('season' => $numbers['season'], 'episode' => $numbers['episode'], 'cpt' => $rewatch['cpt'], 'at' => $rewatch['at']);
+        }
+        return $entries;
+    }
+
+    /**
+     * @return array{0: array<string>, 1: int, 2: int, 3: int, 4: bool}
+     */
+    private function processLists(int $idUser, array $parsed, array $alreadyDone, float $deadline, string $tvdbLanguageCode): array
     {
         $userList      = new UserList();
         $userListSerie = new UserListSerie();
+        $userListMovie = new UserListMovie();
+        $movieMatcher  = new MovieMatcher($this->client, $tvdbLanguageCode);
 
         $doneListKeys    = array();
         $listsCreated    = 0;
         $listSeriesAdded = 0;
+        $listMoviesAdded = 0;
         $finished        = true;
 
         foreach ($parsed['lists'] as $sKey => $list) {
@@ -218,7 +432,16 @@ final class Processor
                 break;
             }
 
-            $idUserList = $userList->create($idUser, $list['name'], null, $list['created_at']);
+            // reuses the same list a previous, separate import job already
+            // created for this exact TV Time list (matched via its own
+            // stable s_key, not its name - see UserList::findByTvtimeKey()'s
+            // own docblock on why) rather than creating a duplicate; a
+            // brand new list still gets that key stored so a later import
+            // can find it too
+            $existingList = $userList->findByTvtimeKey($idUser, $sKey);
+            $idUserList   = $existingList !== null
+                ? (int) $existingList['id_user_list']
+                : $userList->createFromImport($idUser, $list['name'], $sKey, $list['created_at']);
             foreach ($list['series'] as $tvdbSeriesId => $addedAt) {
                 $info = (new Series())->sync($tvdbSeriesId, $this->client);
                 if (empty($info)) {
@@ -229,26 +452,47 @@ final class Processor
                 $userListSerie->add($idUserList, $info['id_serie'], $addedAt);
                 $listSeriesAdded++;
             }
+            // a list movie has no TheTVDB id in the export (see Parser's own
+            // docblock) - matched by name exactly like the main movie
+            // import, but a same-titled ambiguous result is simply left out
+            // of the list rather than queued for resolution: the movie
+            // itself still gets a proper MovieImportPending row from the
+            // main import if applicable, and can be added to this list by
+            // hand afterward once resolved
+            foreach ($list['movies'] as $movieName => $addedAt) {
+                $result = $movieMatcher->match($movieName, null);
+                if ($result['status'] !== 'matched') {
+                    continue;
+                }
+                $info = (new Movie())->sync($result['tvdb_id'], $this->client);
+                if (empty($info)) {
+                    continue;
+                }
+                $userListMovie->add($idUserList, $info['id_movie'], $addedAt);
+                $listMoviesAdded++;
+            }
             $listsCreated++;
 
             $doneListKeys[] = $sKey;
         }
 
-        return array($doneListKeys, $listsCreated, $listSeriesAdded, $finished);
+        return array($doneListKeys, $listsCreated, $listSeriesAdded, $listMoviesAdded, $finished);
     }
 
     /**
-     * @return array{0: array<string>, 1: int, 2: array<string>, 3: int, 4: int, 5: bool}
+     * @return array{0: array<string>, 1: int, 2: array<string>, 3: int, 4: int, 5: int, 6: bool}
      */
-    private function processMovies(int $idUser, array $parsed, array $alreadyDone, float $deadline): array
+    private function processMovies(int $idUser, int $idTvtimeImport, array $parsed, array $alreadyDone, float $deadline, string $tvdbLanguageCode): array
     {
-        $matcher        = new MovieMatcher($this->client);
+        $matcher        = new MovieMatcher($this->client, $tvdbLanguageCode);
         $movieWatchlist = new MovieWatchlist();
         $watchedMovie   = new WatchedMovie();
+        $pendingImport  = new MovieImportPending();
 
         $doneMovieKeys   = array();
         $moviesSynced    = 0;
         $moviesUnmatched = array();
+        $moviesPending   = 0;
         $moviesWatched   = 0;
         $moviesRewatched = 0;
         $finished        = true;
@@ -262,20 +506,37 @@ final class Processor
                 break;
             }
 
-            $tvdbId = $matcher->match($name, $entry['expected_year']);
-            if ($tvdbId === null) {
-                // no single confident match (unmatched title or an
-                // ambiguous one TheTVDB can't disambiguate) - reported, not
-                // guessed, same tolerance as a show TheTVDB no longer
-                // resolves in processShows()
+            $result = $matcher->match($name, $entry['expected_year']);
+            if ($result['status'] !== 'matched') {
+                // not a single confident match (unmatched title, or several
+                // same-titled TheTVDB movies with no way to tell them apart)
+                // - never guessed, stored for the user to resolve by hand
+                // later instead (see Api\Model\MovieImportPending and
+                // MovieMatcher's own docblock)
+                $pendingImport->createOrUpdate(
+                    $idUser,
+                    $idTvtimeImport,
+                    $name,
+                    $entry['expected_year'],
+                    $entry,
+                    $result['candidates']
+                );
                 $moviesUnmatched[] = $name;
+                $moviesPending++;
                 $doneMovieKeys[]   = $name;
                 continue;
             }
 
-            $info = (new Movie())->sync($tvdbId, $this->client);
+            $info = (new Movie())->sync($result['tvdb_id'], $this->client);
             if (empty($info)) {
+                // the match came from TheTVDB's own search a moment ago, so
+                // this is a rare transient failure rather than a bad id -
+                // still worth a pending entry (with no stored candidates,
+                // since the one candidate that mattered just failed to
+                // sync) rather than losing the title outright
+                $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $name, $entry['expected_year'], $entry, array());
                 $moviesUnmatched[] = $name;
+                $moviesPending++;
                 $doneMovieKeys[]   = $name;
                 continue;
             }
@@ -290,16 +551,20 @@ final class Processor
             // each entry is one genuine extra watch with its own preserved
             // timestamp - see Parser's own docblock on why this is more
             // precise than processShows()'s rewatch handling (which only
-            // ever has a bare count, no per-event date, for episodes)
+            // ever has a bare count, no per-event date, for episodes).
+            // syncRewatchFromImport() rather than a raw markRewatched() call
+            // - see its own docblock on why a re-import needs this to stay
+            // idempotent
             foreach ($entry['rewatch_at'] as $rewatchAt) {
-                $watchedMovie->markRewatched($idUser, $info['id_movie'], $rewatchAt);
-                $moviesRewatched++;
+                if ($watchedMovie->syncRewatchFromImport($idUser, $info['id_movie'], $rewatchAt, $idTvtimeImport)) {
+                    $moviesRewatched++;
+                }
             }
 
             $doneMovieKeys[] = $name;
         }
 
-        return array($doneMovieKeys, $moviesSynced, $moviesUnmatched, $moviesWatched, $moviesRewatched, $finished);
+        return array($doneMovieKeys, $moviesSynced, $moviesUnmatched, $moviesPending, $moviesWatched, $moviesRewatched, $finished);
     }
 
 }

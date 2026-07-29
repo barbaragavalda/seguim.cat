@@ -66,17 +66,20 @@ class TvTimeProcess extends Controller
             $alreadyDoneLists  = $importModel->getProcessedListKeys($job);
             $alreadyDoneMovies = $importModel->getProcessedMovieKeys($job);
             $batch             = (new Processor($this->client))
-                ->processBatch((int) $job['id_user'], $parsed, $alreadyDoneShows, $alreadyDoneLists, $alreadyDoneMovies);
+                ->processBatch((int) $job['id_user'], $id, $parsed, $alreadyDoneShows, $alreadyDoneLists, $alreadyDoneMovies);
 
             $importModel->recordBatch($id, $batch['done_show_ids'], $batch['done_list_keys'], $batch['done_movie_keys'], array(
                 'shows_synced'       => $batch['shows_synced'],
                 'shows_failed'       => $batch['shows_failed'],
+                'shows_pending'      => $batch['shows_pending'],
                 'episodes_watched'   => $batch['episodes_watched'],
                 'episodes_rewatched' => $batch['episodes_rewatched'],
                 'lists_created'      => $batch['lists_created'],
                 'list_series_added'  => $batch['list_series_added'],
+                'list_movies_added'  => $batch['list_movies_added'],
                 'movies_synced'      => $batch['movies_synced'],
                 'movies_unmatched'   => $batch['movies_unmatched'],
+                'movies_pending'     => $batch['movies_pending'],
                 'movies_watched'     => $batch['movies_watched'],
                 'movies_rewatched'   => $batch['movies_rewatched'],
             ));

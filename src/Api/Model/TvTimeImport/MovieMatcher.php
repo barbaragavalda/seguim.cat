@@ -19,53 +19,238 @@ use Api\Model\TheTvdb\Client;
  * all to try), and the rest returned no result or a genuinely wrong year on
  * an otherwise-unique title (TV Time's own release_date isn't always the
  * original release year - confirmed for one title where it was off by
- * decades). Anything not clearly resolved here is skipped and reported
- * rather than risking a wrong match - see Processor::processMovies()
+ * decades).
+ *
+ * Anything not a single confident match comes back as 'ambiguous' (with up
+ * to 5 candidates) rather than 'no_match' whenever there's at least one
+ * same-name TheTVDB result - never guessed automatically (a same-titled
+ * remake picked wrong would be a silently incorrect watch history), but also
+ * never just dropped: Processor::processMovies() persists these as
+ * Api\Model\MovieImportPending rows for the user to resolve by hand later
+ * (pick the right poster, or dismiss) - same pattern several other TV Time
+ * migration tools (e.g. the open-source "rewatch" tracker) converged on
+ * independently, since a human glancing at a poster+year disambiguates
+ * instantly in a way no automated heuristic can guarantee.
+ *
+ * TheTVDB's own search endpoint sometimes returns *nothing at all* for a
+ * long exact title that genuinely exists under that literal name - confirmed
+ * empirically ("Harry Potter and the Half-Blood Prince" as a query returns
+ * zero results, even though TheTVDB has a movie with exactly that name;
+ * dropping "and"/"the", or querying just the part before/after a colon or
+ * dash, reliably surfaces it instead). findCandidates() retries with those
+ * loosened queries whenever the first search comes back empty - this can
+ * only ever *find* a title TheTVDB's own search missed, never introduce a
+ * wrong one, since every fallback attempt is still filtered by an exact
+ * match against the *original* full title, not the shortened query used to
+ * ask TheTVDB.
  */
 final class MovieMatcher
 {
 
-    public function __construct(private readonly Client $client)
+    /**
+     * $preferredLanguage (TheTVDB's own 3-letter code, e.g. 'cat'/'spa') is
+     * only used for a candidate's own *display* name (toCandidateList()
+     * below) - matching itself already checks every translation TheTVDB
+     * has for a result regardless of this, since Client::performSearch()
+     * always returns the full `translations` map alongside whichever
+     * single language was requested (see its own docblock)
+     */
+    public function __construct(private readonly Client $client, private readonly string $preferredLanguage = 'eng')
     {
     }
 
     /**
-     * @return int|null the matched TheTVDB movie id, or null if there's no
-     *                   single confident match
+     * @return array{
+     *     status: 'matched'|'ambiguous'|'no_match',
+     *     tvdb_id: ?int,
+     *     candidates: array<int, array{tvdb_id: int, name: string, year: ?string, image: ?string}>
+     * }
      */
-    public function match(string $name, ?string $expectedYear): ?int
+    public function match(string $name, ?string $expectedYear): array
     {
-        $results = $this->client->searchMovies($name, 0, 'eng')['results'] ?? array();
-
-        $target     = self::normalize($name);
-        $candidates = array_values(array_filter(
-            $results,
-            fn(array $result): bool => self::hasMatchingName($result, $target)
-        ));
+        $candidates = $this->findCandidates($name);
 
         if (count($candidates) === 0) {
-            return null;
+            return array('status' => 'no_match', 'tvdb_id' => null, 'candidates' => array());
         }
+
         // a single exact-title hit is trusted even without a year match - a
         // real title collision AND TheTVDB returning only one of them as an
         // "exact name" result is rare, and TV Time's own release_date is
         // occasionally wrong for an otherwise correctly-matched title (see
-        // this class' own docblock)
+        // this class' own docblock) - a dead id here still gets caught right
+        // after by Processor::processMovies()'s own follow-up Movie::sync()
+        // call, so it doesn't need validating against TheTVDB again here
         if (count($candidates) === 1) {
-            return (int) $candidates[0]['tvdb_id'];
+            return array(
+                'status'     => 'matched',
+                'tvdb_id'    => (int) $candidates[0]['tvdb_id'],
+                'candidates' => array(),
+            );
         }
 
-        // more than one movie shares this exact title - only a matching
-        // release year can disambiguate, and only if it does so uniquely
-        if ($expectedYear === null) {
-            return null;
-        }
-        $yearMatches = array_values(array_filter(
+        // more than one movie shares this exact title - TheTVDB's own search
+        // index can lag behind a merge/deletion on the actual record
+        // (confirmed empirically, same phenomenon as SeriesMatcher's own
+        // docblock), so drop anything dead before disambiguating by year or
+        // ever presenting it as a choice - a resolution-screen candidate the
+        // user picks should always actually resolve, never fail silently
+        $liveCandidates = array_values(array_filter(
             $candidates,
-            fn(array $c): bool => !empty($c['year']) && abs((int) $c['year'] - (int) $expectedYear) <= 1
+            fn(array $c): bool => $this->existsOnTvdb((int) $c['tvdb_id'])
         ));
 
-        return count($yearMatches) === 1 ? (int) $yearMatches[0]['tvdb_id'] : null;
+        if (count($liveCandidates) === 0) {
+            return array('status' => 'no_match', 'tvdb_id' => null, 'candidates' => array());
+        }
+        if (count($liveCandidates) === 1) {
+            return array(
+                'status'     => 'matched',
+                'tvdb_id'    => (int) $liveCandidates[0]['tvdb_id'],
+                'candidates' => array(),
+            );
+        }
+
+        // only a matching release year can disambiguate further, and only
+        // if it does so uniquely
+        if ($expectedYear !== null) {
+            $yearMatches = array_values(array_filter(
+                $liveCandidates,
+                fn(array $c): bool => !empty($c['year']) && abs((int) $c['year'] - (int) $expectedYear) <= 1
+            ));
+            if (count($yearMatches) === 1) {
+                return array(
+                    'status'     => 'matched',
+                    'tvdb_id'    => (int) $yearMatches[0]['tvdb_id'],
+                    'candidates' => array(),
+                );
+            }
+        }
+
+        return array(
+            'status'     => 'ambiguous',
+            'tvdb_id'    => null,
+            'candidates' => $this->toCandidateList($liveCandidates),
+        );
+    }
+
+    /**
+     * only called once a title search already came back with more than one
+     * same-named result (see match()) - the common single-hit case is left
+     * to Processor's own follow-up sync() call instead, to avoid an extra
+     * TheTVDB round trip for every confidently-matched movie
+     */
+    private function existsOnTvdb(int $tvdbId): bool
+    {
+        return !empty($this->client->getMovie($tvdbId));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function findCandidates(string $name): array
+    {
+        $target = self::normalize($name);
+
+        $results = $this->client->searchMovies($name, 0, 'eng')['results'] ?? array();
+        $matches = self::filterMatchingName($results, $target);
+        if (count($matches) > 0) {
+            return $matches;
+        }
+
+        foreach (self::fallbackQueries($name) as $fallbackQuery) {
+            $fallbackResults = $this->client->searchMovies($fallbackQuery, 0, 'eng')['results'] ?? array();
+            $fallbackMatches = self::filterMatchingName($fallbackResults, $target);
+            if (count($fallbackMatches) > 0) {
+                return $fallbackMatches;
+            }
+        }
+
+        return array();
+    }
+
+    /**
+     * Looser queries to retry TheTVDB's search with when the exact title
+     * finds nothing - see this class' own docblock. Splitting on a colon/
+     * dash covers a "Title: Subtitle" shape (try each half alone); dropping
+     * "and"/"the" covers titles like "Harry Potter and the X" specifically.
+     * Every candidate found this way still has to match the *original*
+     * $name exactly (see findCandidates()) before it counts for anything.
+     *
+     * @return array<int, string>
+     */
+    private static function fallbackQueries(string $name): array
+    {
+        $queries = array();
+
+        foreach (array(':', ' - ', '–') as $separator) {
+            if (!str_contains($name, $separator)) {
+                continue;
+            }
+            [$before, $after] = array_pad(explode($separator, $name, 2), 2, '');
+            $queries[] = trim($before);
+            if (trim($after) !== '') {
+                $queries[] = trim($after);
+            }
+        }
+
+        $withoutStopwords = preg_replace('/\b(and|the)\b/i', '', $name) ?? $name;
+        $withoutStopwords = trim(preg_replace('/\s+/', ' ', $withoutStopwords) ?? $withoutStopwords);
+        if ($withoutStopwords !== '' && $withoutStopwords !== $name) {
+            $queries[] = $withoutStopwords;
+        }
+
+        return array_values(array_unique(array_filter($queries)));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $results
+     * @return array<int, array<string, mixed>>
+     */
+    private static function filterMatchingName(array $results, string $target): array
+    {
+        return array_values(array_filter(
+            $results,
+            fn(array $result): bool => self::hasMatchingName($result, $target)
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $candidates
+     * @return array<int, array{tvdb_id: int, name: string, year: ?string, image: ?string}>
+     */
+    private function toCandidateList(array $candidates): array
+    {
+        // capped at 5 - a resolution screen showing every same-titled result
+        // TheTVDB has (sometimes a dozen+ for a very common title) would be
+        // useless; the search response is already relevance-ranked, so the
+        // first few are overwhelmingly the ones a real person would mean
+        return array_map(
+            fn(array $c): array => array(
+                'tvdb_id' => (int) $c['tvdb_id'],
+                'name'    => $this->displayName($c),
+                'year'    => $c['year'] ?? null,
+                'image'   => $c['image'] ?? null,
+            ),
+            array_slice($candidates, 0, 5)
+        );
+    }
+
+    /**
+     * The user's own language first, English next, and only then whatever
+     * TheTVDB calls this result's own primary/default name - a candidate
+     * poster's title should read in the language the user actually reads
+     * the app in whenever TheTVDB has a translation for it
+     *
+     * @param array<string, mixed> $candidate
+     */
+    private function displayName(array $candidate): string
+    {
+        $translations = $candidate['translations'] ?? array();
+        return $translations[$this->preferredLanguage]
+            ?? $translations['eng']
+            ?? $candidate['name']
+            ?? '';
     }
 
     private static function hasMatchingName(array $result, string $target): bool

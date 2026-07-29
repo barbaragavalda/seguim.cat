@@ -16,7 +16,14 @@ class WatchedEpisode extends Model
      * regular Episode/Watch controller flow. Without this, every imported
      * episode would tie for the import's own timestamp, making Watchlist::
      * listWatching()'s "most recently watched" ordering meaningless for
-     * imported data
+     * imported data. Deliberately never tags the row with an import id
+     * (unlike syncRewatchesFromImport() below) - this method is already
+     * idempotent on its own (isWatched() covers any row regardless of
+     * origin), and tagging it would double as a false "already-imported
+     * rewatch" for syncRewatchesFromImport()'s own count - confirmed
+     * empirically as a real bug (a cpt=2 rewatch only inserted 1 row
+     * because the base watch's own tagged row was miscounted as one of
+     * the two)
      */
     public function markWatched(int $idUser, int $idEpisode, ?string $watchedAt = null): void
     {
@@ -30,11 +37,55 @@ class WatchedEpisode extends Model
      * always inserts a new watch event, even if $idEpisode is already
      * watched - this is the point: user_episode_watched is one row per
      * watch event, not per episode, so a rewatch just adds another one
-     * rather than being silently absorbed like markWatched() would
+     * rather than being silently absorbed like markWatched() would. Used
+     * directly by the app's own rewatch controller (one real, freshly-
+     * happening event); the importer uses syncRewatchesFromImport() below
+     * instead, since TV Time's own export data is a bare count, not
+     * discrete events, and needs its own dedup logic to stay safe across
+     * more than one import job
      */
     public function markRewatched(int $idUser, int $idEpisode, ?string $watchedAt = null): void
     {
         $this->insertWatch($idUser, $idEpisode, $watchedAt);
+    }
+
+    /**
+     * TV Time's own export gives a bare rewatch *count* per episode (see
+     * Api\Model\TvTimeImport\Parser's own docblock) - never discrete,
+     * individually-timestamped events the way a movie rewatch is - so
+     * there's no natural key to dedupe individual rewatch rows against
+     * across two separate import jobs (e.g. the user re-uploads the same
+     * or a newer export). Instead, this counts how many rewatch rows an
+     * *earlier* import already recorded for this episode (tagged via
+     * $idTvtimeImport on insert) and only inserts the shortfall - so
+     * re-importing an unchanged export adds nothing, and a newer export
+     * with a higher count only adds the difference. A rewatch logged by
+     * the user directly in the app (markRewatched() above, untagged)
+     * never counts toward this and is never touched by it.
+     *
+     * @return int how many new rows were actually inserted
+     */
+    public function syncRewatchesFromImport(int $idUser, int $idEpisode, int $cpt, string $watchedAt, int $idTvtimeImport): int
+    {
+        $toInsert = max(0, $cpt - $this->importedRewatchCount($idUser, $idEpisode));
+        for ($i = 0; $i < $toInsert; $i++) {
+            $this->insertWatch($idUser, $idEpisode, $watchedAt, $idTvtimeImport);
+        }
+        return $toInsert;
+    }
+
+    private function importedRewatchCount(int $idUser, int $idEpisode): int
+    {
+        $sql    = '
+            SELECT COUNT(*) AS cnt
+            FROM user_episode_watched
+            WHERE id_user = :id_user AND id_episode = :id_episode AND id_tvtime_import IS NOT NULL
+        ';
+        $params = array(
+            'id_user'    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_episode' => array('value' => $idEpisode, 'type' => PDO::PARAM_INT),
+        );
+        return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
     }
 
     /**
@@ -76,16 +127,17 @@ class WatchedEpisode extends Model
         $this->mysql->query($sql2, $params2);
     }
 
-    private function insertWatch(int $idUser, int $idEpisode, ?string $watchedAt): void
+    private function insertWatch(int $idUser, int $idEpisode, ?string $watchedAt, ?int $idTvtimeImport = null): void
     {
         $sql    = '
-            INSERT INTO user_episode_watched (id_user, id_episode, watched_at)
-            VALUES (:id_user, :id_episode, :watched_at)
+            INSERT INTO user_episode_watched (id_user, id_episode, watched_at, id_tvtime_import)
+            VALUES (:id_user, :id_episode, :watched_at, :id_tvtime_import)
         ';
         $params = array(
-            'id_user'    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_episode' => array('value' => $idEpisode, 'type' => PDO::PARAM_INT),
-            'watched_at' => array('value' => $watchedAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
+            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_episode'       => array('value' => $idEpisode, 'type' => PDO::PARAM_INT),
+            'watched_at'       => array('value' => $watchedAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
+            'id_tvtime_import' => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
         );
         $this->mysql->query($sql, $params);
     }
