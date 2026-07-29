@@ -4,26 +4,38 @@ namespace Api\Controller\Lists;
 
 use Api\Controller\Controller;
 use Api\Model\UserList;
+use Api\Model\UserListMovie;
 use Api\Model\UserListSerie;
 use Core\Routing\Attribute\Route;
 
+/**
+ * A list's series and movies are fetched together (own independent page/
+ * hasMore per kind, since they're paginated separately - own ordering,
+ * own PAGE_SIZE) rather than needing two requests, since a list detail
+ * screen shows both sections at once anyway.
+ */
 #[Route('/lists/{id}', methods: ['GET'], name: 'api.lists.show', requirements: ['id' => '\d+'])]
 class Show extends Controller
 {
 
     protected function run(): void
     {
-        $id   = (int) $this->getParam('id');
-        $page = max(0, (int) ($_GET['page'] ?? 0));
+        $id        = (int) $this->getParam('id');
+        $page      = max(0, (int) ($_GET['page'] ?? 0));
+        $moviePage = max(0, (int) ($_GET['movie_page'] ?? 0));
 
         if (!(new UserList())->belongsToUser($this->user->getID(), $id)) {
             $this->error = '404';
             return;
         }
 
-        $result = (new UserListSerie())->listForList($id, $page);
-        $this->assign('series', $result['results']);
-        $this->assign('hasMore', $result['hasMore']);
+        $series = (new UserListSerie())->listForList($id, $page);
+        $this->assign('series', $series['results']);
+        $this->assign('hasMore', $series['hasMore']);
+
+        $movies = (new UserListMovie())->listForList($id, $moviePage);
+        $this->assign('movies', $movies['results']);
+        $this->assign('moviesHasMore', $movies['hasMore']);
     }
 
 }
