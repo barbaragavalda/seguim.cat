@@ -396,15 +396,25 @@ class Watchlist extends Model
 
     private function finalizeRows(array $rows, int $idUser, int $idAppacmanLang): array
     {
+        // `image` (poster) and `background` (fanart) both go out as-is now
+        // - the landscape watchlist row only ever wanted the fanart, but
+        // the app's "My series" poster grid (same endpoint, different
+        // screen) needs the actual poster, so neither can overwrite the
+        // other any more
+        $progress = (new Episode())->watchProgressForSeries(
+            $idUser,
+            array_map(static fn(array $r): int => (int) $r['id_serie'], $rows),
+        );
+
         foreach ($rows as &$row) {
             $row['name']     = $row['name'] ?: $row['default_name'];
             $row['overview'] = $row['overview'] ?: $row['default_overview'];
 
-            // watchlist only ever shows the background/fanart, never the
-            // poster - confirmed with the user, so `image` is overwritten
-            // rather than kept alongside `background`
-            $row['image'] = $row['background'];
-            unset($row['background']);
+            $idSerie = (int) $row['id_serie'];
+            if (isset($progress[$idSerie])) {
+                $row['watched_episodes'] = $progress[$idSerie]['watched'];
+                $row['total_episodes']   = $progress[$idSerie]['total'];
+            }
 
             $remaining                  = $this->remainingEpisodes($idUser, (int) $row['id_serie'], $idAppacmanLang);
             $next                       = $remaining[0] ?? null;

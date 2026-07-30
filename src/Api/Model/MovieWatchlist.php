@@ -187,10 +187,10 @@ class MovieWatchlist extends Model
             $row['name']     = $row['name'] ?: $row['default_name'];
             $row['overview'] = $row['overview'] ?: $row['default_overview'];
 
-            // same convention as Watchlist::finalizeRows() - a list view
-            // only ever shows the background/fanart, never the poster
-            $row['image'] = $row['background'];
-            unset($row['background']);
+            // `image` (poster) and `background` (fanart) both go out as-is
+            // now - see Watchlist::finalizeRows()'s own comment, same
+            // reasoning (the "My movies" poster grid needs the poster,
+            // the landscape movies-tab row wants the fanart)
 
             $watchCount        = $watchedMovie->watchCount($idUser, (int) $row['id_movie']);
             $row['watched']    = $watchCount > 0;
