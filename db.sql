@@ -587,6 +587,11 @@ CREATE TABLE `movie` (
   -- a movie only has one release year (unlike serie's year_start/year_end
   -- range) - TheTVDB's own `year` field on the base/extended record
   `year` varchar(4) DEFAULT NULL,
+  -- full date, TheTVDB's own `first_release.date` (its "global" release,
+  -- not tied to any one country - unlike the many country-specific dates in
+  -- its `releases` array) - `year` above stays as its own column since
+  -- other screens (search/lists/my movies) only ever show the year
+  `release_date` date DEFAULT NULL,
   -- minutes, TheTVDB's own `runtime` field
   `runtime` smallint(5) unsigned DEFAULT NULL,
   `status` varchar(50) DEFAULT NULL,
@@ -611,6 +616,80 @@ CREATE TABLE `movie_lang` (
   `synced_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_movie_lang`) USING BTREE,
   UNIQUE KEY `id_movie_lang_lookup` (`id_movie`, `id_appacman_lang`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_genre (TheTVDB's genre taxonomy has no
+-- per-language translation - confirmed empirically, a genre's name never
+-- varies with Accept-Language - so unlike movie_lang there's no synced_at/
+-- TTL here either, just a full replace each movie sync cycle. `slug` lets
+-- the app localize the label itself client-side, `name` is the raw English
+-- fallback for a slug it doesn't have a translation for yet)
+-- ----------------------------
+DROP TABLE IF EXISTS `movie_genre`;
+CREATE TABLE `movie_genre` (
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `tvdb_genre_id` smallint(5) unsigned NOT NULL,
+  `slug` varchar(100) DEFAULT NULL,
+  `name` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`id_movie`, `tvdb_genre_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_cast (top-billed cast, peopleType === 'Actor'
+-- rows only from TheTVDB's `characters` array - the rest are crew. Person/
+-- character names have no per-language translation in practice, same
+-- reasoning as movie_genre)
+-- ----------------------------
+DROP TABLE IF EXISTS `movie_cast`;
+CREATE TABLE `movie_cast` (
+  `id_movie_cast` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `tvdb_character_id` int(10) unsigned NOT NULL,
+  `tvdb_people_id` int(10) unsigned DEFAULT NULL,
+  `person_name` varchar(255) DEFAULT NULL,
+  `character_name` varchar(255) DEFAULT NULL,
+  `image` varchar(500) DEFAULT NULL,
+  `sort_order` smallint(5) unsigned DEFAULT NULL,
+  PRIMARY KEY (`id_movie_cast`) USING BTREE,
+  UNIQUE KEY `id_movie_character` (`id_movie`, `tvdb_character_id`),
+  KEY `id_movie_sort` (`id_movie`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_content_rating (age ratings are country-
+-- specific, not language-specific - TheTVDB ties each one to a `country`,
+-- not a language - so there's no *_lang table here either)
+-- ----------------------------
+DROP TABLE IF EXISTS `movie_content_rating`;
+CREATE TABLE `movie_content_rating` (
+  `id_movie_content_rating` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `tvdb_rating_id` int(10) unsigned NOT NULL,
+  `country` char(3) DEFAULT NULL,
+  `rating` varchar(20) DEFAULT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id_movie_content_rating`) USING BTREE,
+  UNIQUE KEY `id_movie_rating` (`id_movie`, `tvdb_rating_id`),
+  KEY `id_movie_country` (`id_movie`, `country`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_trailer (TheTVDB returns a flat list of
+-- separate trailer entries, each already tagged with its own `language` -
+-- not one trailer translated N ways - so there's nothing to sync into a
+-- *_lang table, bestForLanguage() just picks among the rows already here)
+-- ----------------------------
+DROP TABLE IF EXISTS `movie_trailer`;
+CREATE TABLE `movie_trailer` (
+  `id_movie_trailer` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `tvdb_trailer_id` int(10) unsigned NOT NULL,
+  `name` varchar(255) DEFAULT NULL,
+  `url` varchar(500) DEFAULT NULL,
+  `language` char(3) DEFAULT NULL,
+  PRIMARY KEY (`id_movie_trailer`) USING BTREE,
+  UNIQUE KEY `id_movie_trailer_lookup` (`id_movie`, `tvdb_trailer_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------

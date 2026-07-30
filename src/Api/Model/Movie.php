@@ -52,6 +52,17 @@ class Movie extends Model
 
         $this->upsert($tvdbId, $data);
         $this->loadWithTvdbId($tvdbId);
+
+        // piggyback on the same 24h sync cycle as the movie's own base
+        // data, same reasoning as Series::sync()'s background fetch - a
+        // full replace each cycle rather than incremental upserts, since
+        // none of these need to preserve any local-only state per row
+        $idMovie = (int) $this->info['id_movie'];
+        (new MovieGenre())->syncForMovie($idMovie, $data['genres'] ?? array());
+        (new MovieCast())->syncForMovie($idMovie, $data['characters'] ?? array());
+        (new MovieContentRating())->syncForMovie($idMovie, $data['contentRatings'] ?? array());
+        (new MovieTrailer())->syncForMovie($idMovie, $data['trailers'] ?? array());
+
         return $this->info;
     }
 
@@ -66,11 +77,12 @@ class Movie extends Model
     private function upsert(int $tvdbId, array $data): void
     {
         $sql   = '
-            INSERT INTO movie (tvdb_id, default_name, default_overview, image, background, year, runtime, status, slug, synced_at)
-            VALUES (:tvdb_id, :default_name, :default_overview, :image, :background, :year, :runtime, :status, :slug, NOW())
+            INSERT INTO movie (tvdb_id, default_name, default_overview, image, background, year, release_date, runtime, status, slug, synced_at)
+            VALUES (:tvdb_id, :default_name, :default_overview, :image, :background, :year, :release_date, :runtime, :status, :slug, NOW())
             ON DUPLICATE KEY UPDATE
                 default_name = :default_name_upd, default_overview = :default_overview_upd,
                 image = :image_upd, background = :background_upd, year = :year_upd,
+                release_date = :release_date_upd,
                 runtime = :runtime_upd, status = :status_upd, slug = :slug_upd, synced_at = NOW()
         ';
         // TheTVDB's own base/extended record name/overview - normally the
@@ -82,6 +94,9 @@ class Movie extends Model
         $image      = $data['image'] ?? null;
         $background = $data['background'] ?? null;
         $year       = $data['year'] ?? null;
+        // `first_release` is the movie's single "global" release date,
+        // unlike the many country-specific dates in its `releases` array
+        $releaseDate = $data['first_release']['date'] ?? null;
         $runtime    = $data['runtime'] ?? null;
         // MovieExtendedRecord's status is an object ({id, name, recordType,
         // keepUpdated}), same shape as a series' own status
@@ -96,6 +111,8 @@ class Movie extends Model
             'default_overview_upd' => array('value' => $defaultOverview, 'type' => PDO::PARAM_STR),
             'image'                => array('value' => $image, 'type' => PDO::PARAM_STR),
             'image_upd'            => array('value' => $image, 'type' => PDO::PARAM_STR),
+            'release_date'         => array('value' => $releaseDate, 'type' => PDO::PARAM_STR),
+            'release_date_upd'     => array('value' => $releaseDate, 'type' => PDO::PARAM_STR),
             'background'           => array('value' => $background, 'type' => PDO::PARAM_STR),
             'background_upd'       => array('value' => $background, 'type' => PDO::PARAM_STR),
             'year'                 => array('value' => $year, 'type' => PDO::PARAM_STR),
