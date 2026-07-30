@@ -629,14 +629,21 @@ final class Processor
         $moviesRewatched = 0;
         $finished        = true;
 
-        foreach ($parsed['movies'] as $name => $entry) {
-            if (in_array($name, $alreadyDone, true)) {
+        foreach ($parsed['movies'] as $key => $entry) {
+            if (in_array($key, $alreadyDone, true)) {
                 continue;
             }
             if (microtime(true) >= $deadline) {
                 $finished = false;
                 break;
             }
+
+            // $key is the resume/dedup key - Parser::parseMovies() gives a
+            // same-titled-but-different-film entry a disambiguated key
+            // ("Title (Year)") so it doesn't collide with another movie of
+            // the same title, but the actual title to search/show the user
+            // is always $entry['name']
+            $name = $entry['name'];
 
             $result = $matcher->match($name, $entry['expected_year']);
             if ($result['status'] !== 'matched') {
@@ -655,7 +662,7 @@ final class Processor
                 );
                 $moviesUnmatched[] = $name;
                 $moviesPending++;
-                $doneMovieKeys[]   = $name;
+                $doneMovieKeys[]   = $key;
                 continue;
             }
 
@@ -669,7 +676,7 @@ final class Processor
                 $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $name, $entry['expected_year'], $entry, array());
                 $moviesUnmatched[] = $name;
                 $moviesPending++;
-                $doneMovieKeys[]   = $name;
+                $doneMovieKeys[]   = $key;
                 continue;
             }
 
@@ -693,7 +700,7 @@ final class Processor
                 }
             }
 
-            $doneMovieKeys[] = $name;
+            $doneMovieKeys[] = $key;
         }
 
         return array($doneMovieKeys, $moviesSynced, $moviesUnmatched, $moviesPending, $moviesWatched, $moviesRewatched, $finished);

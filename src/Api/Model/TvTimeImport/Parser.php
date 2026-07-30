@@ -608,9 +608,18 @@ final class Parser
 
     /**
      * see this class' own docblock for the uuid/type grouping this relies
-     * on - each uuid is one tracked movie entry, not one event
+     * on - each uuid is one tracked movie entry, not one event. Keyed by
+     * name, EXCEPT when two different uuids share a name but disagree on
+     * `expected_year` - the export has no tvdb id for movies, only a title,
+     * so "A Star Is Born" (1937/1954/1976/2018 all share that exact title)
+     * can't be told apart from a same-movie re-follow (a genuinely new
+     * uuid for the same film, same year, after an unfollow) any other way.
+     * A year mismatch means two different films, so that entry gets a
+     * disambiguated key instead of silently merging into (and corrupting)
+     * the first one - every entry still carries its own true `name`, since
+     * the key itself is no longer reliable for that once disambiguated.
      *
-     * @return array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>
+     * @return array<string, array{name: string, expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>
      */
     private function parseMovies(string $path): array
     {
@@ -653,22 +662,43 @@ final class Parser
             sort($rewatchAt);
 
             $entry = array(
-                'expected_year'        => $year,
-                'watchlist_created_at' => $followRow['created_at'] ?? null,
-                'watched_at'           => $watchRow['created_at'] ?? null,
-                'rewatch_at'           => $rewatchAt,
+                'name'                  => $name,
+                'expected_year'         => $year,
+                'watchlist_created_at'  => $followRow['created_at'] ?? null,
+                'watched_at'            => $watchRow['created_at'] ?? null,
+                'rewatch_at'            => $rewatchAt,
             );
 
-            // the same movie name already seen under a different uuid
-            // (unfollowed and re-followed later, etc.) - merge rather than
-            // overwrite: earliest watchlist/first-watch date wins, rewatch
-            // events are combined, same "earliest wins" philosophy as
-            // recordWatch() below
-            $movies[$name] = !isset($movies[$name]) ? $entry : array(
-                'expected_year'        => $movies[$name]['expected_year'] ?? $entry['expected_year'],
-                'watchlist_created_at' => $this->earliest($movies[$name]['watchlist_created_at'], $entry['watchlist_created_at']),
-                'watched_at'           => $this->earliest($movies[$name]['watched_at'], $entry['watched_at']),
-                'rewatch_at'           => array_merge($movies[$name]['rewatch_at'], $entry['rewatch_at']),
+            $existing = $movies[$name] ?? null;
+            if ($existing === null) {
+                $movies[$name] = $entry;
+                continue;
+            }
+
+            $sameFilm = $existing['expected_year'] === null
+                || $entry['expected_year'] === null
+                || $existing['expected_year'] === $entry['expected_year'];
+            if (!$sameFilm) {
+                // a different film with the exact same title - keep as its
+                // own entry instead of corrupting $existing; a rare second
+                // collision (three-plus films sharing one title) would
+                // still overwrite here, but that's vanishingly unlikely in
+                // one person's own tracked history
+                $movies[$name . ' (' . $entry['expected_year'] . ')'] = $entry;
+                continue;
+            }
+
+            // the same film, seen under a different uuid (unfollowed and
+            // re-followed later, etc.) - merge rather than overwrite:
+            // earliest watchlist/first-watch date wins, rewatch events are
+            // combined, same "earliest wins" philosophy as recordWatch()
+            // below
+            $movies[$name] = array(
+                'name'                 => $name,
+                'expected_year'        => $existing['expected_year'] ?? $entry['expected_year'],
+                'watchlist_created_at' => $this->earliest($existing['watchlist_created_at'], $entry['watchlist_created_at']),
+                'watched_at'           => $this->earliest($existing['watched_at'], $entry['watched_at']),
+                'rewatch_at'           => array_merge($existing['rewatch_at'], $entry['rewatch_at']),
             );
         }
 
