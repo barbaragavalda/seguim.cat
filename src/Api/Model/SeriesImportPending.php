@@ -14,6 +14,9 @@ use PDO;
  * MovieImportPending, except the watched/rewatch snapshot is keyed by
  * season+episode NUMBER rather than TheTVDB episode id - see this table's
  * own docblock in db.sql for why.
+ *
+ * resolve()/skip() mark a row `resolved` instead of deleting it - see
+ * MovieImportPending's own docblock on why, identical reasoning here.
  */
 class SeriesImportPending extends Model
 {
@@ -107,17 +110,40 @@ class SeriesImportPending extends Model
 
     /**
      * how many of $idUserList's own series are still waiting on a pending
-     * row - for the app's own "X of Y imported" list indicator
+     * row - for the app's own "X of Y imported" list indicator. Excludes
+     * already-resolved/dismissed rows - see MovieImportPending::
+     * pendingCountForList()'s own docblock, identical reasoning
      */
     public function pendingCountForList(int $idUserList): int
     {
         $sql    = '
             SELECT COUNT(*) AS cnt
-            FROM series_import_pending_list
-            WHERE id_user_list = :id_user_list
+            FROM series_import_pending_list sipl
+            JOIN series_import_pending sip ON sip.id_series_import_pending = sipl.id_series_import_pending
+            WHERE sipl.id_user_list = :id_user_list AND sip.resolved = 0
         ';
         $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
         return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
+    }
+
+    /**
+     * whether $showName already has a resolved/dismissed row for $idUser -
+     * see MovieImportPending::isResolved()'s own docblock, identical
+     * reasoning
+     */
+    public function isResolved(int $idUser, string $showName): bool
+    {
+        $sql    = '
+            SELECT 1
+            FROM series_import_pending
+            WHERE id_user = :id_user AND show_name = :show_name AND resolved = 1
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'   => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'show_name' => array('value' => $showName, 'type' => PDO::PARAM_STR),
+        );
+        return isset($this->mysql->query($sql, $params)[0]);
     }
 
     /**
@@ -128,7 +154,7 @@ class SeriesImportPending extends Model
         $sql    = '
             SELECT *
             FROM series_import_pending
-            WHERE id_user = :id_user
+            WHERE id_user = :id_user AND resolved = 0
             ORDER BY created ASC
         ';
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
@@ -268,7 +294,7 @@ class SeriesImportPending extends Model
             return false;
         }
 
-        $this->delete((int) $pending['id_series_import_pending']);
+        $this->markResolved((int) $pending['id_series_import_pending']);
         return true;
     }
 
@@ -283,27 +309,22 @@ class SeriesImportPending extends Model
         if ($pending === null) {
             return false;
         }
-        $this->delete((int) $pending['id_series_import_pending']);
+        $this->markResolved((int) $pending['id_series_import_pending']);
         return true;
     }
 
-    private function delete(int $id): void
+    /**
+     * see MovieImportPending::markResolved()'s own docblock, identical
+     * reasoning
+     */
+    private function markResolved(int $id): void
     {
-        // also deletes every series_import_pending_list row for this pending
-        // show - no FK cascade in this schema (none of this project's tables
-        // use one), same "caller doesn't have to remember" reasoning as
-        // UserList::delete()'s own docblock
         $sql    = '
-            DELETE FROM series_import_pending_list
+            UPDATE series_import_pending
+            SET resolved = 1
             WHERE id_series_import_pending = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
-        $this->mysql->query($sql, $params);
-
-        $sql = '
-            DELETE FROM series_import_pending
-            WHERE id_series_import_pending = :id
-        ';
         $this->mysql->query($sql, $params);
     }
 

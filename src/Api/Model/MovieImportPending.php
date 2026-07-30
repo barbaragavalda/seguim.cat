@@ -11,6 +11,13 @@ use PDO;
  * resolve, waiting for the user to pick the right one by hand (or dismiss
  * it) - see MovieMatcher's own docblock for why this exists instead of
  * guessing or silently dropping the title.
+ *
+ * resolve()/skip() mark a row `resolved` instead of deleting it: the title
+ * itself is exactly as ambiguous on a later import as it was on this one
+ * (nothing about the source data changes), so Processor checks isResolved()
+ * before even attempting the match again - without the row surviving,
+ * every re-import would re-discover the same ambiguity and put the same
+ * already-answered question back in front of the user.
  */
 class MovieImportPending extends Model
 {
@@ -94,17 +101,46 @@ class MovieImportPending extends Model
 
     /**
      * how many of $idUserList's own movies are still waiting on a pending
-     * row - for the app's own "X of Y imported" list indicator
+     * row - for the app's own "X of Y imported" list indicator. Excludes
+     * already-resolved/dismissed rows (see `resolved`'s own docblock in
+     * db.sql) - those aren't "still" pending for the list, resolve() itself
+     * already added them (or skip() confirmed they never will be)
      */
     public function pendingCountForList(int $idUserList): int
     {
         $sql    = '
             SELECT COUNT(*) AS cnt
-            FROM movie_import_pending_list
-            WHERE id_user_list = :id_user_list
+            FROM movie_import_pending_list mipl
+            JOIN movie_import_pending mip ON mip.id_movie_import_pending = mipl.id_movie_import_pending
+            WHERE mipl.id_user_list = :id_user_list AND mip.resolved = 0
         ';
         $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
         return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
+    }
+
+    /**
+     * whether $movieName already has a resolved/dismissed row for $idUser -
+     * checked by Processor before matching this exact title again, so a
+     * later import doesn't resurrect a resolution dialog the user already
+     * answered (the source title is still just as ambiguous as before -
+     * that never changes - so without this check the same createOrUpdate()
+     * call that used to update the row in place before it was resolved
+     * would instead create a brand new one, since resolve()/skip() no
+     * longer delete it)
+     */
+    public function isResolved(int $idUser, string $movieName): bool
+    {
+        $sql    = '
+            SELECT 1
+            FROM movie_import_pending
+            WHERE id_user = :id_user AND movie_name = :movie_name AND resolved = 1
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'movie_name' => array('value' => $movieName, 'type' => PDO::PARAM_STR),
+        );
+        return isset($this->mysql->query($sql, $params)[0]);
     }
 
     /**
@@ -115,7 +151,7 @@ class MovieImportPending extends Model
         $sql    = '
             SELECT *
             FROM movie_import_pending
-            WHERE id_user = :id_user
+            WHERE id_user = :id_user AND resolved = 0
             ORDER BY created ASC
         ';
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
@@ -228,7 +264,7 @@ class MovieImportPending extends Model
             return false;
         }
 
-        $this->delete((int) $pending['id_movie_import_pending']);
+        $this->markResolved((int) $pending['id_movie_import_pending']);
         return true;
     }
 
@@ -275,26 +311,24 @@ class MovieImportPending extends Model
         if ($pending === null) {
             return false;
         }
-        $this->delete((int) $pending['id_movie_import_pending']);
+        $this->markResolved((int) $pending['id_movie_import_pending']);
         return true;
     }
 
-    private function delete(int $id): void
+    /**
+     * Marks a pending row as handled (resolved with a candidate, or
+     * dismissed - both count as "the user already answered this" as far as
+     * a future import is concerned) instead of deleting it - see
+     * `resolved`'s own docblock in db.sql on why the row has to survive.
+     */
+    private function markResolved(int $id): void
     {
-        // also deletes every movie_import_pending_list row for this pending
-        // title - see SeriesImportPending::delete()'s own docblock, same
-        // "no FK cascade in this schema" reasoning
         $sql    = '
-            DELETE FROM movie_import_pending_list
+            UPDATE movie_import_pending
+            SET resolved = 1
             WHERE id_movie_import_pending = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
-        $this->mysql->query($sql, $params);
-
-        $sql = '
-            DELETE FROM movie_import_pending
-            WHERE id_movie_import_pending = :id
-        ';
         $this->mysql->query($sql, $params);
     }
 

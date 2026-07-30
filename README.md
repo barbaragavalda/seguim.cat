@@ -179,10 +179,13 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     (`pending`/`processing`/`done`/`failed`) and `summary` (shows synced/failed, episodes watched/
     rewatched).
 
-    A show still followed in TV Time but archived there sets `user_serie_watchlist.archived`; one with
-    watch history but no longer followed at all (unfollowed/deleted) sets `.removed` instead - both
-    are still imported, just hidden from both watchlist endpoints (see above) rather than dropped,
-    in case the app wants to surface them differently later.
+    A show `user_tv_show_data.csv`'s own `is_followed` still marks as followed sets
+    `user_serie_watchlist.archived` from `followed_tv_show.csv`'s own `archived` column (when it has
+    a row for the show at all); one `is_followed` marks as unfollowed sets `.removed` instead, even
+    with real watch history - confirmed `followed_tv_show.csv` alone is a log of follow *actions*,
+    not a show's current state, so `is_followed` (not presence there) decides this. Both are still
+    imported, just hidden from both watchlist endpoints (see above) rather than dropped, in case the
+    app wants to surface them differently later.
 
     The same import also recreates the account's own custom lists (see below) from the export's
     `lists-prod-lists.csv`, once every show above has finished syncing (lists are the far smaller,

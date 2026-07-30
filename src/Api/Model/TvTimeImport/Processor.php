@@ -317,6 +317,13 @@ final class Processor
             return null;
         }
 
+        // already resolved (or dismissed) in an earlier import - see
+        // Processor::processMovies()'s own comment on the identical check
+        // there for why this has to happen before the matcher runs again
+        if ($pendingImport->isResolved($idUser, $showName)) {
+            return array('pending' => false, 'episodes_watched' => 0, 'episodes_rewatched' => 0);
+        }
+
         $watchedEntries  = $this->toEpisodeNumberEntries($parsed['watched'][$oldTvdbSeriesId] ?? array(), $parsed['episode_numbers'][$oldTvdbSeriesId] ?? array());
         $rewatchEntries  = $this->toRewatchEpisodeNumberEntries($parsed['rewatches'][$oldTvdbSeriesId] ?? array(), $parsed['episode_numbers'][$oldTvdbSeriesId] ?? array());
 
@@ -487,6 +494,14 @@ final class Processor
             // resolving it later (Api\Model\MovieImportPending::resolve())
             // adds it to this list too instead of just the general watchlist
             foreach ($list['movies'] as $movieName => $addedAt) {
+                // already resolved (or dismissed) in an earlier import -
+                // see Processor::processMovies()'s own comment on the
+                // identical check there. Same "won't re-add to a brand new
+                // list" caveat as resolveListSeriesByName()'s own comment
+                if ($moviePendingImport->isResolved($idUser, $movieName)) {
+                    continue;
+                }
+
                 $expectedYear = $parsed['movies'][$movieName]['expected_year'] ?? null;
                 $result       = $movieMatcher->match($movieName, $expectedYear);
                 if ($result['status'] === 'matched') {
@@ -543,6 +558,17 @@ final class Processor
         string $addedAt
     ): bool {
         $showName = $parsed['show_names'][$tvdbSeriesId] ?? null;
+
+        // already resolved (or dismissed) in an earlier import - see
+        // Processor::processMovies()'s own comment on the identical check
+        // there. Doesn't re-add to *this* list if it's a new one since that
+        // resolution (resolve() only links whichever lists were linked to
+        // the pending row at the time) - rare enough (a list-only reference
+        // to an already-resolved dead-id show, added to a brand new list on
+        // a later import) not to chase further
+        if ($showName !== null && $pendingImport->isResolved($idUser, $showName)) {
+            return false;
+        }
 
         if ($showName !== null) {
             $result = $seriesMatcher->match($showName);
@@ -644,6 +670,15 @@ final class Processor
             // the same title, but the actual title to search/show the user
             // is always $entry['name']
             $name = $entry['name'];
+
+            // already resolved (or dismissed) in an earlier import - the
+            // title is exactly as ambiguous now as it was then, so matching
+            // it again would only re-derive the same pending question the
+            // user already answered, see MovieImportPending's own docblock
+            if ($pendingImport->isResolved($idUser, $name)) {
+                $doneMovieKeys[] = $key;
+                continue;
+            }
 
             $result = $matcher->match($name, $entry['expected_year']);
             if ($result['status'] !== 'matched') {

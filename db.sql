@@ -885,6 +885,11 @@ CREATE TABLE `movie_import_pending` (
   -- candidates at import time, so the resolution screen doesn't need a
   -- fresh TheTVDB search (and stays stable even if a later search re-ranks)
   `candidates` text NOT NULL,
+  -- set by Api\Model\MovieImportPending::resolve()/skip() instead of
+  -- deleting the row - a later import hitting the same still-ambiguous
+  -- title (the source data doesn't change) must not re-create a dialog the
+  -- user already answered; see that class' own docblock
+  `resolved` tinyint(1) NOT NULL DEFAULT 0,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_movie_import_pending`) USING BTREE,
   -- re-running an import (or a second import later) that hits the same
@@ -927,6 +932,8 @@ CREATE TABLE `series_import_pending` (
   -- JSON array of up to 5 {tvdb_id, name, year, image} - SeriesMatcher's own
   -- candidates at import time
   `candidates` text NOT NULL,
+  -- see movie_import_pending.resolved's own comment, identical reasoning
+  `resolved` tinyint(1) NOT NULL DEFAULT 0,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_series_import_pending`) USING BTREE,
   UNIQUE KEY `id_user_show_name` (`id_user`, `show_name`),
