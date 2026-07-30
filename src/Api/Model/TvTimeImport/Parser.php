@@ -111,7 +111,7 @@ final class Parser
      *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
      *     watched: array<int, array<int, string>>,
      *     rewatches: array<int, array<int, array{cpt: int, at: string}>>,
-     *     lists: array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>}>,
+     *     lists: array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>, preview_movie_ids: array<int, int>}>,
      *     movies: array<string, array{expected_year: ?string, watchlist_created_at: ?string, watched_at: ?string, rewatch_at: array<int, string>}>,
      *     show_names: array<int, string>,
      *     episode_numbers: array<int, array<int, array{season: int, episode: int}>>
@@ -132,7 +132,9 @@ final class Parser
 
         $rewatches      = $this->parseRewatches($dir . '/rewatched_episode.csv', $nameToId, $episodeNumbers);
         $movieUuidNames = $this->parseMovieUuidNames($dir . '/tracking-prod-records.csv');
-        $lists          = $this->parseLists($dir . '/lists-prod-lists.csv', $movieUuidNames);
+        $listMeta       = $this->parseListMeta($dir . '/lists-prod-lists.csv');
+        $lists          = $this->parseLists($dir . '/lists-prod-lists.csv', $movieUuidNames, $listMeta['names'], $listMeta['previewMovieIds']);
+        $lists          = $this->reorderLists($lists, $listMeta['order']);
         $movies         = $this->parseMovies($dir . '/tracking-prod-records.csv');
 
         // a show with watch history but no row in followed_tv_show.csv at
@@ -306,12 +308,12 @@ final class Parser
 
     /**
      * @param array<string, string> $movieUuidNames uuid => movie_name, see this class' own docblock
-     * @return array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>}>
+     * @param array<string, string> $realNames s_key => real display name, see parseListMeta()
+     * @param array<string, array<int, int>> $previewMovieIds s_key => tvdb movie ids, see parseListMeta()
+     * @return array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>, preview_movie_ids: array<int, int>}>
      */
-    private function parseLists(string $path, array $movieUuidNames): array
+    private function parseLists(string $path, array $movieUuidNames, array $realNames, array $previewMovieIds): array
     {
-        $realNames = $this->parseListNames($path);
-
         $lists = array();
         foreach ($this->readCsv($path) as $row) {
             $sKey = $row['s_key'] ?? '';
@@ -358,7 +360,13 @@ final class Parser
                 $name = 'List from ' . substr($createdAt, 0, 10);
             }
 
-            $lists[$sKey] = array('name' => $name, 'created_at' => $createdAt, 'series' => $series, 'movies' => $movies);
+            $lists[$sKey] = array(
+                'name'              => $name,
+                'created_at'        => $createdAt,
+                'series'            => $series,
+                'movies'            => $movies,
+                'preview_movie_ids' => $previewMovieIds[$sKey] ?? array(),
+            );
         }
 
         return $lists;
@@ -398,11 +406,34 @@ final class Parser
      * (`posters:[url1 url2]`) - a naive `[^\]]*` match would stop at the
      * array's own closing `]`, truncating everything after it
      *
-     * @return array<string, string> s_key => real display name
+     * Also recovers a handful of otherwise-unidentifiable list movies from
+     * that same `posters`/`fanart` preview: a movie-type object inside a
+     * list's own `objects` column never carries anything beyond its `uuid`
+     * (see this class' own docblock), but TheTVDB artwork URLs embed
+     * TheTVDB's own movie id directly in their path (`v4/movie/{id}/...`, or
+     * the older `movies/{id}/...` - never bare `posters/{id}-{n}.jpg`, which
+     * is TheTVDB's *series* artwork scheme and deliberately not matched
+     * here). Confirmed empirically against a real export: this preview is a
+     * fixed, TV-Time-chosen snapshot capped at ~4 items regardless of the
+     * list's real size, and not in creation order - so it can name a few
+     * more movies for a given list, but never says *which* of that list's
+     * still-unresolved uuids each one actually was. Processor::processLists()
+     * therefore adds them to the list directly by tvdb id rather than trying
+     * to slot them into a specific pending entry.
+     *
+     * `$order` is this same collection row's own entry order (TV Time's own
+     * displayed list order, per the app itself), so a fresh import can
+     * create the user's lists in that order instead of whatever order
+     * lists-prod-lists.csv's separate per-list rows happen to appear in -
+     * see parse()'s own reordering of $lists just below
+     *
+     * @return array{names: array<string, string>, previewMovieIds: array<string, array<int, int>>, order: array<int, string>}
      */
-    private function parseListNames(string $path): array
+    private function parseListMeta(string $path): array
     {
-        $names = array();
+        $names           = array();
+        $previewMovieIds = array();
+        $order           = array();
         foreach ($this->readCsv($path) as $row) {
             if (($row['s_key'] ?? '') !== 'collection') {
                 continue;
@@ -410,15 +441,54 @@ final class Parser
             foreach ($this->splitTopLevelMaps($row['lists'] ?? '') as $entry) {
                 $kv   = $this->parseMapContent($entry);
                 $sKey = $kv['s_key'] ?? '';
+                if ($sKey === '') {
+                    continue;
+                }
+                $order[] = $sKey;
+
                 $name = trim($kv['name'] ?? '');
-                if ($sKey !== '' && $name !== '' && $name !== '<nil>') {
+                if ($name !== '' && $name !== '<nil>') {
                     $names[$sKey] = $name;
+                }
+
+                $artwork = ($kv['posters'] ?? '') . ' ' . ($kv['fanart'] ?? '');
+                if (preg_match_all('~(?:v4/movie|movies)/(\d+)/~', $artwork, $matches)) {
+                    $previewMovieIds[$sKey] = array_values(array_unique(array_map('intval', $matches[1])));
                 }
             }
             break;
         }
 
-        return $names;
+        return array('names' => $names, 'previewMovieIds' => $previewMovieIds, 'order' => $order);
+    }
+
+    /**
+     * reorders $lists (built in lists-prod-lists.csv's own per-list-row
+     * order) to match $order (the collection row's own entry order, TV
+     * Time's real displayed order) instead - any list missing from $order
+     * (shouldn't normally happen, both come from the same file) keeps its
+     * original relative position, appended after every ordered one, so it's
+     * never silently dropped
+     *
+     * @param array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>, preview_movie_ids: array<int, int>}> $lists
+     * @param array<int, string> $order
+     * @return array<string, array{name: string, created_at: string, series: array<int, string>, movies: array<string, string>, preview_movie_ids: array<int, int>}>
+     */
+    private function reorderLists(array $lists, array $order): array
+    {
+        $reordered = array();
+        foreach ($order as $sKey) {
+            if (isset($lists[$sKey])) {
+                $reordered[$sKey] = $lists[$sKey];
+            }
+        }
+        foreach ($lists as $sKey => $list) {
+            if (!isset($reordered[$sKey])) {
+                $reordered[$sKey] = $list;
+            }
+        }
+
+        return $reordered;
     }
 
     /**
