@@ -3,6 +3,7 @@
 namespace Api\Controller\Lists;
 
 use Api\Controller\Controller;
+use Api\Model\Episode;
 use Api\Model\MovieImportPending;
 use Api\Model\SeriesImportPending;
 use Api\Model\UserList;
@@ -32,7 +33,7 @@ class Show extends Controller
         }
 
         $series = (new UserListSerie())->listForList($id, $page);
-        $this->assign('series', $series['results']);
+        $this->assign('series', $this->withWatchProgress($series['results']));
         $this->assign('hasMore', $series['hasMore']);
 
         $movies = (new UserListMovie())->listForList($id, $moviePage);
@@ -45,6 +46,33 @@ class Show extends Controller
         // links a still-unresolved series/movie to its list instead of
         // silently dropping it)
         $this->assign('pendingCount', (new SeriesImportPending())->pendingCountForList($id) + (new MovieImportPending())->pendingCountForList($id));
+    }
+
+    /**
+     * attaches watched_episodes/total_episodes to every row - unlike
+     * Search\Search's own version of this, every row here already has a
+     * real id_serie (straight from the `serie` table, see
+     * UserListSerie::listForList()), so there's no tvdb_id lookup step
+     */
+    private function withWatchProgress(array $rows): array
+    {
+        if (empty($rows)) {
+            return $rows;
+        }
+
+        $idSeries = array_map(static fn(array $r): int => (int) $r['id_serie'], $rows);
+        $progress = (new Episode())->watchProgressForSeries($this->user->getID(), $idSeries);
+
+        foreach ($rows as &$row) {
+            $idSerie = (int) $row['id_serie'];
+            if (isset($progress[$idSerie])) {
+                $row['watched_episodes'] = $progress[$idSerie]['watched'];
+                $row['total_episodes']   = $progress[$idSerie]['total'];
+            }
+        }
+        unset($row);
+
+        return $rows;
     }
 
 }

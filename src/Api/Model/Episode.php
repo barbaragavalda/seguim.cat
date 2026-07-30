@@ -121,6 +121,56 @@ class Episode extends Model
         $this->mysql->query($sql, $params);
     }
 
+    /**
+     * how many of each series' aired regular episodes $idUser has watched -
+     * batched across every id in $idSeries in one query rather than one per
+     * series, since Search/Lists results return many at once. Same
+     * "regular episodes only, already aired" definition as Watchlist::
+     * remainingEpisodes(). A series absent from the returned array has no
+     * aired regular episodes synced locally yet - that's "no data to show a
+     * progress bar for", not "0 watched"; the caller should treat it that
+     * way rather than rendering an empty bar.
+     *
+     * @param int[] $idSeries
+     * @return array<int, array{watched: int, total: int}> keyed by id_serie
+     */
+    public function watchProgressForSeries(int $idUser, array $idSeries): array
+    {
+        if (empty($idSeries)) {
+            return array();
+        }
+
+        $params       = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
+        $placeholders = array();
+        foreach (array_values($idSeries) as $index => $idSerie) {
+            $key            = 'id_serie_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key]   = array('value' => $idSerie, 'type' => PDO::PARAM_INT);
+        }
+
+        $sql = '
+            SELECT e.id_serie,
+                   COUNT(DISTINCT e.id_episode) AS total,
+                   COUNT(DISTINCT uew.id_episode) AS watched
+            FROM episode e
+            LEFT JOIN user_episode_watched uew ON uew.id_episode = e.id_episode AND uew.id_user = :id_user
+            WHERE e.id_serie IN (' . implode(',', $placeholders) . ')
+              AND e.season_number > 0
+              AND e.aired IS NOT NULL AND e.aired <= CURDATE()
+            GROUP BY e.id_serie
+        ';
+        $rows = $this->mysql->query($sql, $params);
+
+        $result = array();
+        foreach ($rows as $row) {
+            $result[(int) $row['id_serie']] = array(
+                'watched' => (int) $row['watched'],
+                'total'   => (int) $row['total'],
+            );
+        }
+        return $result;
+    }
+
     private function load(array $episode): bool|int
     {
         if (count($episode)) {

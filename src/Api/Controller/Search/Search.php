@@ -3,6 +3,8 @@
 namespace Api\Controller\Search;
 
 use Api\Controller\Controller;
+use Api\Model\Episode;
+use Api\Model\Series;
 use Api\Model\TheTvdb\Client;
 use Api\Model\TheTvdb\Languages;
 use Core\Controller\CacheManager;
@@ -43,8 +45,54 @@ class Search extends Controller
         $tvdbLanguageCode = Languages::tvdbCodeForCulture($this->config->getLanguage()) ?? 'eng';
 
         $result = $this->client->searchAll($query, $page, $tvdbLanguageCode);
-        $this->assign('results', $result['results']);
+        $results = $result['results'];
+
+        // only possible when the caller sent a real user token instead of
+        // the app's shared one (requiresUserToken() is false so both are
+        // accepted) - an anonymous/logged-out search has no user to
+        // compute watch progress for, so results go out unchanged
+        if ($this->user !== null) {
+            $results = $this->withWatchProgress($results);
+        }
+
+        $this->assign('results', $results);
         $this->assign('hasMore', $result['hasMore']);
+    }
+
+    /**
+     * attaches watched_episodes/total_episodes to every series-type result
+     * that's already synced locally (a never-opened series has no episode
+     * data to compute against, so it's left alone - the client treats a
+     * missing pair as "no progress bar", not "0%")
+     */
+    private function withWatchProgress(array $results): array
+    {
+        $tvdbIds = array_values(array_unique(array_map(
+            static fn(array $r): int => (int) $r['tvdb_id'],
+            array_filter($results, static fn(array $r): bool => ($r['type'] ?? null) === 'series'),
+        )));
+        if (empty($tvdbIds)) {
+            return $results;
+        }
+
+        $idBySeries = (new Series())->idsForTvdbIds($tvdbIds);
+        if (empty($idBySeries)) {
+            return $results;
+        }
+
+        $progress = (new Episode())->watchProgressForSeries($this->user->getID(), array_values($idBySeries));
+
+        foreach ($results as &$result) {
+            $tvdbId  = (int) $result['tvdb_id'];
+            $idSerie = $idBySeries[$tvdbId] ?? null;
+            if ($idSerie !== null && isset($progress[$idSerie])) {
+                $result['watched_episodes'] = $progress[$idSerie]['watched'];
+                $result['total_episodes']   = $progress[$idSerie]['total'];
+            }
+        }
+        unset($result);
+
+        return $results;
     }
 
 }

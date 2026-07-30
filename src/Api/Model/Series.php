@@ -33,6 +33,44 @@ class Series extends Model
     }
 
     /**
+     * which of $tvdbIds are already locally synced, and what id_serie each
+     * one maps to - for Search results, which only ever carry TheTVDB's own
+     * tvdb_id, never this app's own id_serie (unlike a list's own rows,
+     * which come straight from the `serie` table already). A tvdb_id
+     * missing from the returned map simply isn't synced locally yet.
+     *
+     * @param int[] $tvdbIds
+     * @return array<int, int> tvdb_id => id_serie
+     */
+    public function idsForTvdbIds(array $tvdbIds): array
+    {
+        if (empty($tvdbIds)) {
+            return array();
+        }
+
+        $params       = array();
+        $placeholders = array();
+        foreach (array_values($tvdbIds) as $index => $tvdbId) {
+            $key            = 'tvdb_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key]   = array('value' => $tvdbId, 'type' => PDO::PARAM_INT);
+        }
+
+        $sql  = '
+            SELECT id_serie, tvdb_id
+            FROM serie
+            WHERE tvdb_id IN (' . implode(',', $placeholders) . ')
+        ';
+        $rows = $this->mysql->query($sql, $params);
+
+        $result = array();
+        foreach ($rows as $row) {
+            $result[(int) $row['tvdb_id']] = (int) $row['id_serie'];
+        }
+        return $result;
+    }
+
+    /**
      * returns the local mirror row for $tvdbId, fetching/upserting it from
      * TheTVDB first if it's missing or stale - this is the "on-demand lazy
      * mirroring" behavior, no full-catalog sync involved
