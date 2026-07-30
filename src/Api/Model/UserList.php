@@ -122,10 +122,12 @@ class UserList extends Model
     }
 
     /**
-     * also deletes every user_list_serie/user_list_movie row for this list -
-     * there's no FK cascade in this schema (none of this project's tables
-     * use one), so the caller doesn't have to remember to call
-     * UserListSerie/UserListMovie separately
+     * also deletes every user_list_serie/user_list_movie row for this list,
+     * plus any series_import_pending_list/movie_import_pending_list link
+     * that pointed a still-unresolved pending show/movie at it - there's no
+     * FK cascade in this schema (none of this project's tables use one), so
+     * the caller doesn't have to remember to call UserListSerie/
+     * UserListMovie/*ImportPending separately
      */
     public function delete(int $idUser, int $idUserList): void
     {
@@ -138,6 +140,18 @@ class UserList extends Model
 
         $sql = '
             DELETE FROM user_list_movie
+            WHERE id_user_list = :id_user_list
+        ';
+        $this->mysql->query($sql, $params);
+
+        $sql = '
+            DELETE FROM series_import_pending_list
+            WHERE id_user_list = :id_user_list
+        ';
+        $this->mysql->query($sql, $params);
+
+        $sql = '
+            DELETE FROM movie_import_pending_list
             WHERE id_user_list = :id_user_list
         ';
         $this->mysql->query($sql, $params);
@@ -156,10 +170,12 @@ class UserList extends Model
     public function removeAllForUser(int $idUser): void
     {
         $sql    = '
-            DELETE ul, uls, ulm
+            DELETE ul, uls, ulm, sipl, mipl
             FROM user_list ul
             LEFT JOIN user_list_serie uls ON uls.id_user_list = ul.id_user_list
             LEFT JOIN user_list_movie ulm ON ulm.id_user_list = ul.id_user_list
+            LEFT JOIN series_import_pending_list sipl ON sipl.id_user_list = ul.id_user_list
+            LEFT JOIN movie_import_pending_list mipl ON mipl.id_user_list = ul.id_user_list
             WHERE ul.id_user = :id_user
         ';
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));

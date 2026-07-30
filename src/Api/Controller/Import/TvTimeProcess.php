@@ -77,6 +77,8 @@ class TvTimeProcess extends Controller
                 'lists_created'      => $batch['lists_created'],
                 'list_series_added'  => $batch['list_series_added'],
                 'list_movies_added'  => $batch['list_movies_added'],
+                'list_series_pending' => $batch['list_series_pending'],
+                'list_movies_pending' => $batch['list_movies_pending'],
                 'movies_synced'      => $batch['movies_synced'],
                 'movies_unmatched'   => $batch['movies_unmatched'],
                 'movies_pending'     => $batch['movies_pending'],

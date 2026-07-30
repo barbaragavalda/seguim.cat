@@ -3,6 +3,8 @@
 namespace Api\Controller\Lists;
 
 use Api\Controller\Controller;
+use Api\Model\MovieImportPending;
+use Api\Model\SeriesImportPending;
 use Api\Model\UserList;
 use Api\Model\UserListMovie;
 use Api\Model\UserListSerie;
@@ -36,6 +38,13 @@ class Show extends Controller
         $movies = (new UserListMovie())->listForList($id, $moviePage);
         $this->assign('movies', $movies['results']);
         $this->assign('moviesHasMore', $movies['hasMore']);
+
+        // how many of this list's own members are still waiting on a
+        // pending series_import_pending/movie_import_pending row - see
+        // those tables' own docblocks in db.sql (Processor::processLists()
+        // links a still-unresolved series/movie to its list instead of
+        // silently dropping it)
+        $this->assign('pendingCount', (new SeriesImportPending())->pendingCountForList($id) + (new MovieImportPending())->pendingCountForList($id));
     }
 
 }

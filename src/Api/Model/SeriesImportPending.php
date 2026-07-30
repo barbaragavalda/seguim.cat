@@ -65,6 +65,62 @@ class SeriesImportPending extends Model
     }
 
     /**
+     * Records that $idUserList wants this pending show as a member, once
+     * resolved - see series_import_pending_list's own docblock in db.sql.
+     * Idempotent (a re-import or a resumed batch hitting the same list/show
+     * pair again is a no-op) via INSERT IGNORE rather than a SELECT-then-
+     * INSERT, since the table's own unique key already guarantees this
+     * safely under concurrent/repeated calls.
+     */
+    public function linkList(int $idSeriesImportPending, int $idUserList, ?string $addedAt): void
+    {
+        $sql    = '
+            INSERT IGNORE INTO series_import_pending_list (id_series_import_pending, id_user_list, added_at)
+            VALUES (:id_pending, :id_user_list, :added_at)
+        ';
+        $params = array(
+            'id_pending'   => array('value' => $idSeriesImportPending, 'type' => PDO::PARAM_INT),
+            'id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT),
+            'added_at'     => array('value' => $addedAt, 'type' => PDO::PARAM_STR),
+        );
+        $this->mysql->query($sql, $params);
+    }
+
+    /**
+     * @return array<int, array{id_user_list: int, added_at: ?string}>
+     */
+    private function linkedLists(int $idSeriesImportPending): array
+    {
+        $sql    = '
+            SELECT id_user_list, added_at
+            FROM series_import_pending_list
+            WHERE id_series_import_pending = :id_pending
+        ';
+        $params = array('id_pending' => array('value' => $idSeriesImportPending, 'type' => PDO::PARAM_INT));
+        $rows   = $this->mysql->query($sql, $params);
+
+        return array_map(
+            static fn(array $row): array => array('id_user_list' => (int) $row['id_user_list'], 'added_at' => $row['added_at']),
+            $rows
+        );
+    }
+
+    /**
+     * how many of $idUserList's own series are still waiting on a pending
+     * row - for the app's own "X of Y imported" list indicator
+     */
+    public function pendingCountForList(int $idUserList): int
+    {
+        $sql    = '
+            SELECT COUNT(*) AS cnt
+            FROM series_import_pending_list
+            WHERE id_user_list = :id_user_list
+        ';
+        $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
+        return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function listForUser(int $idUser): array
@@ -84,6 +140,28 @@ class SeriesImportPending extends Model
         unset($row);
 
         return $rows;
+    }
+
+    /**
+     * looks up a pending row's own id by its unique key instead of by its
+     * primary key - createOrUpdate() is an upsert and doesn't return which
+     * row it touched, and Processor::processLists() needs this id right
+     * after to link a list to it (see linkList())
+     */
+    public function idForShowName(int $idUser, string $showName): ?int
+    {
+        $sql    = '
+            SELECT id_series_import_pending
+            FROM series_import_pending
+            WHERE id_user = :id_user AND show_name = :show_name
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'   => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'show_name' => array('value' => $showName, 'type' => PDO::PARAM_STR),
+        );
+        $rows   = $this->mysql->query($sql, $params);
+        return isset($rows[0]) ? (int) $rows[0]['id_series_import_pending'] : null;
     }
 
     private function findOwnedByUser(int $id, int $idUser): ?array
@@ -130,6 +208,8 @@ class SeriesImportPending extends Model
 
         $watchedEpisodes = json_decode($pending['watched_episodes'], true) ?? array();
         $rewatchEpisodes = json_decode($pending['rewatch_episodes'], true) ?? array();
+        $linkedLists     = $this->linkedLists((int) $pending['id_series_import_pending']);
+        $userListSerie   = new UserListSerie();
 
         $appliedAny = false;
         foreach ($tvdbIds as $tvdbId) {
@@ -173,6 +253,14 @@ class SeriesImportPending extends Model
                 }
             }
 
+            // this show was also wanted as a member of one or more lists
+            // (Processor::processLists() linked it here instead of silently
+            // dropping it - see series_import_pending_list's own docblock) -
+            // now that it's actually synced, add it to each of them too
+            foreach ($linkedLists as $linked) {
+                $userListSerie->add($linked['id_user_list'], (int) $info['id_serie'], $linked['added_at']);
+            }
+
             $appliedAny = true;
         }
 
@@ -201,11 +289,21 @@ class SeriesImportPending extends Model
 
     private function delete(int $id): void
     {
+        // also deletes every series_import_pending_list row for this pending
+        // show - no FK cascade in this schema (none of this project's tables
+        // use one), same "caller doesn't have to remember" reasoning as
+        // UserList::delete()'s own docblock
         $sql    = '
-            DELETE FROM series_import_pending
+            DELETE FROM series_import_pending_list
             WHERE id_series_import_pending = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
+        $this->mysql->query($sql, $params);
+
+        $sql = '
+            DELETE FROM series_import_pending
+            WHERE id_series_import_pending = :id
+        ';
         $this->mysql->query($sql, $params);
     }
 

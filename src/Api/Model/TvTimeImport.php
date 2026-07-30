@@ -169,26 +169,30 @@ class TvTimeImport extends Model
             ? json_decode($job['summary'], true)
             : array(
                 'shows_synced' => 0, 'shows_failed' => array(), 'shows_pending' => 0, 'episodes_watched' => 0, 'episodes_rewatched' => 0,
-                'lists_created' => 0, 'list_series_added' => 0, 'list_movies_added' => 0, 'movies_synced' => 0, 'movies_unmatched' => array(),
+                'lists_created' => 0, 'list_series_added' => 0, 'list_movies_added' => 0,
+                'list_series_pending' => 0, 'list_movies_pending' => 0,
+                'movies_synced' => 0, 'movies_unmatched' => array(),
                 'movies_pending' => 0, 'movies_watched' => 0, 'movies_rewatched' => 0,
             );
         $mergedSummary = array(
-            'shows_synced'       => $summary['shows_synced'] + $summaryDelta['shows_synced'],
-            'shows_failed'       => array_values(array_unique(array_merge($summary['shows_failed'], $summaryDelta['shows_failed']))),
-            'shows_pending'      => ($summary['shows_pending'] ?? 0) + $summaryDelta['shows_pending'],
-            'episodes_watched'   => $summary['episodes_watched'] + $summaryDelta['episodes_watched'],
-            'episodes_rewatched' => ($summary['episodes_rewatched'] ?? 0) + $summaryDelta['episodes_rewatched'],
-            'lists_created'      => ($summary['lists_created'] ?? 0) + $summaryDelta['lists_created'],
-            'list_series_added'  => ($summary['list_series_added'] ?? 0) + $summaryDelta['list_series_added'],
-            'list_movies_added'  => ($summary['list_movies_added'] ?? 0) + $summaryDelta['list_movies_added'],
-            'movies_synced'      => ($summary['movies_synced'] ?? 0) + $summaryDelta['movies_synced'],
-            'movies_unmatched'   => array_values(array_unique(array_merge(
+            'shows_synced'         => $summary['shows_synced'] + $summaryDelta['shows_synced'],
+            'shows_failed'         => array_values(array_unique(array_merge($summary['shows_failed'], $summaryDelta['shows_failed']))),
+            'shows_pending'        => ($summary['shows_pending'] ?? 0) + $summaryDelta['shows_pending'],
+            'episodes_watched'     => $summary['episodes_watched'] + $summaryDelta['episodes_watched'],
+            'episodes_rewatched'   => ($summary['episodes_rewatched'] ?? 0) + $summaryDelta['episodes_rewatched'],
+            'lists_created'        => ($summary['lists_created'] ?? 0) + $summaryDelta['lists_created'],
+            'list_series_added'    => ($summary['list_series_added'] ?? 0) + $summaryDelta['list_series_added'],
+            'list_movies_added'    => ($summary['list_movies_added'] ?? 0) + $summaryDelta['list_movies_added'],
+            'list_series_pending'  => ($summary['list_series_pending'] ?? 0) + $summaryDelta['list_series_pending'],
+            'list_movies_pending'  => ($summary['list_movies_pending'] ?? 0) + $summaryDelta['list_movies_pending'],
+            'movies_synced'        => ($summary['movies_synced'] ?? 0) + $summaryDelta['movies_synced'],
+            'movies_unmatched'     => array_values(array_unique(array_merge(
                 $summary['movies_unmatched'] ?? array(),
                 $summaryDelta['movies_unmatched']
             ))),
-            'movies_pending'     => ($summary['movies_pending'] ?? 0) + $summaryDelta['movies_pending'],
-            'movies_watched'     => ($summary['movies_watched'] ?? 0) + $summaryDelta['movies_watched'],
-            'movies_rewatched'   => ($summary['movies_rewatched'] ?? 0) + $summaryDelta['movies_rewatched'],
+            'movies_pending'       => ($summary['movies_pending'] ?? 0) + $summaryDelta['movies_pending'],
+            'movies_watched'       => ($summary['movies_watched'] ?? 0) + $summaryDelta['movies_watched'],
+            'movies_rewatched'     => ($summary['movies_rewatched'] ?? 0) + $summaryDelta['movies_rewatched'],
         );
 
         $sql    = '

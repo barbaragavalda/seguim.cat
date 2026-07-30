@@ -919,4 +919,50 @@ CREATE TABLE `user_list_movie` (
   KEY `id_user_list_ordering` (`id_user_list`, `ordering`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ----------------------------
+-- Table structure for series_import_pending_list (which user_list(s) wanted
+-- a series_import_pending row's show as a member - Processor::processLists()
+-- used to just silently drop a list's own series/movie whenever it couldn't
+-- resolve it (dead tvdb_id with no SeriesMatcher fallback at all, or an
+-- ambiguous/unmatched movie); it now reuses the exact same
+-- series_import_pending/movie_import_pending rows the main show/movie
+-- import already creates for this purpose, linking this list to that row
+-- instead of duplicating its own separate pending concept. Once the user
+-- resolves that pending row (Api\Model\SeriesImportPending::resolve()), it
+-- adds the newly-synced series to every list linked here, not just the
+-- user's overall watchlist - see resolve()'s own docblock)
+-- ----------------------------
+DROP TABLE IF EXISTS `series_import_pending_list`;
+CREATE TABLE `series_import_pending_list` (
+  `id_series_import_pending_list` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_series_import_pending` mediumint(8) unsigned NOT NULL,
+  `id_user_list` mediumint(8) unsigned NOT NULL,
+  -- the list item's own added_at from the export (Parser::parseLists()) -
+  -- applied to user_list_serie.created once this resolves, same as a
+  -- normally-resolved list series would get
+  `added_at` timestamp NULL DEFAULT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_series_import_pending_list`) USING BTREE,
+  -- re-running an import (or a later batch of the same one) that hits the
+  -- same still-unresolved show in the same list is a no-op, not a duplicate
+  UNIQUE KEY `id_pending_id_user_list` (`id_series_import_pending`, `id_user_list`),
+  KEY `id_user_list` (`id_user_list`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_import_pending_list - see
+-- series_import_pending_list's own docblock just above, identical shape
+-- ----------------------------
+DROP TABLE IF EXISTS `movie_import_pending_list`;
+CREATE TABLE `movie_import_pending_list` (
+  `id_movie_import_pending_list` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_movie_import_pending` mediumint(8) unsigned NOT NULL,
+  `id_user_list` mediumint(8) unsigned NOT NULL,
+  `added_at` timestamp NULL DEFAULT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_movie_import_pending_list`) USING BTREE,
+  UNIQUE KEY `id_pending_id_user_list` (`id_movie_import_pending`, `id_user_list`),
+  KEY `id_user_list` (`id_user_list`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;

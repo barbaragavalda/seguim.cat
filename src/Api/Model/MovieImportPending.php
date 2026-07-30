@@ -57,6 +57,57 @@ class MovieImportPending extends Model
     }
 
     /**
+     * see SeriesImportPending::linkList()'s own docblock - identical shape
+     */
+    public function linkList(int $idMovieImportPending, int $idUserList, ?string $addedAt): void
+    {
+        $sql    = '
+            INSERT IGNORE INTO movie_import_pending_list (id_movie_import_pending, id_user_list, added_at)
+            VALUES (:id_pending, :id_user_list, :added_at)
+        ';
+        $params = array(
+            'id_pending'   => array('value' => $idMovieImportPending, 'type' => PDO::PARAM_INT),
+            'id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT),
+            'added_at'     => array('value' => $addedAt, 'type' => PDO::PARAM_STR),
+        );
+        $this->mysql->query($sql, $params);
+    }
+
+    /**
+     * @return array<int, array{id_user_list: int, added_at: ?string}>
+     */
+    private function linkedLists(int $idMovieImportPending): array
+    {
+        $sql    = '
+            SELECT id_user_list, added_at
+            FROM movie_import_pending_list
+            WHERE id_movie_import_pending = :id_pending
+        ';
+        $params = array('id_pending' => array('value' => $idMovieImportPending, 'type' => PDO::PARAM_INT));
+        $rows   = $this->mysql->query($sql, $params);
+
+        return array_map(
+            static fn(array $row): array => array('id_user_list' => (int) $row['id_user_list'], 'added_at' => $row['added_at']),
+            $rows
+        );
+    }
+
+    /**
+     * how many of $idUserList's own movies are still waiting on a pending
+     * row - for the app's own "X of Y imported" list indicator
+     */
+    public function pendingCountForList(int $idUserList): int
+    {
+        $sql    = '
+            SELECT COUNT(*) AS cnt
+            FROM movie_import_pending_list
+            WHERE id_user_list = :id_user_list
+        ';
+        $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
+        return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function listForUser(int $idUser): array
@@ -76,6 +127,26 @@ class MovieImportPending extends Model
         unset($row);
 
         return $rows;
+    }
+
+    /**
+     * see SeriesImportPending::idForShowName()'s own docblock, identical
+     * reasoning
+     */
+    public function idForMovieName(int $idUser, string $movieName): ?int
+    {
+        $sql    = '
+            SELECT id_movie_import_pending
+            FROM movie_import_pending
+            WHERE id_user = :id_user AND movie_name = :movie_name
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'movie_name' => array('value' => $movieName, 'type' => PDO::PARAM_STR),
+        );
+        $rows   = $this->mysql->query($sql, $params);
+        return isset($rows[0]) ? (int) $rows[0]['id_movie_import_pending'] : null;
     }
 
     private function findOwnedByUser(int $id, int $idUser): ?array
@@ -123,6 +194,9 @@ class MovieImportPending extends Model
             return null;
         }
 
+        $linkedLists   = $this->linkedLists((int) $pending['id_movie_import_pending']);
+        $userListMovie = new UserListMovie();
+
         $appliedAny = false;
         foreach ($tvdbIds as $tvdbId) {
             $movie = new Movie();
@@ -140,6 +214,15 @@ class MovieImportPending extends Model
             foreach (json_decode($pending['rewatch_at'], true) ?? array() as $rewatchAt) {
                 (new WatchedMovie())->markRewatched($idUser, $info['id_movie'], $rewatchAt);
             }
+
+            // this movie was also wanted as a member of one or more lists
+            // (Processor::processLists() linked it here instead of silently
+            // dropping it - see movie_import_pending_list's own docblock) -
+            // now that it's actually synced, add it to each of them too
+            foreach ($linkedLists as $linked) {
+                $userListMovie->add($linked['id_user_list'], (int) $info['id_movie'], $linked['added_at']);
+            }
+
             $appliedAny = true;
         }
 
@@ -169,11 +252,20 @@ class MovieImportPending extends Model
 
     private function delete(int $id): void
     {
+        // also deletes every movie_import_pending_list row for this pending
+        // title - see SeriesImportPending::delete()'s own docblock, same
+        // "no FK cascade in this schema" reasoning
         $sql    = '
-            DELETE FROM movie_import_pending
+            DELETE FROM movie_import_pending_list
             WHERE id_movie_import_pending = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
+        $this->mysql->query($sql, $params);
+
+        $sql = '
+            DELETE FROM movie_import_pending
+            WHERE id_movie_import_pending = :id
+        ';
         $this->mysql->query($sql, $params);
     }
 

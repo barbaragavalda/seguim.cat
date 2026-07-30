@@ -20,7 +20,10 @@ use Api\Model\TheTvdb\Client;
  * rationale and the fallback-query retry logic duplicated below), but
  * simpler in one way: TV Time's export carries no reliable release year for
  * a series the way it does for a movie, so a same-titled collision can only
- * ever come back ambiguous, never auto-disambiguated by year.
+ * ever come back ambiguous, never auto-disambiguated by year. Also mirrors
+ * its fuzzy word-overlap fallback (see MovieMatcher's own docblock) for
+ * when even the loosened exact-name queries find nothing - never trusted as
+ * a single confident match either, same $isFuzzy reasoning as there.
  */
 final class SeriesMatcher
 {
@@ -43,7 +46,9 @@ final class SeriesMatcher
      */
     public function match(string $name): array
     {
-        $candidates = $this->findCandidates($name);
+        $found      = $this->findCandidates($name);
+        $candidates = $found['items'];
+        $isFuzzy    = $found['fuzzy'];
 
         if (count($candidates) === 0) {
             return array('status' => 'no_match', 'tvdb_id' => null, 'candidates' => array());
@@ -54,8 +59,10 @@ final class SeriesMatcher
         // only one of them as an exact-name result is rare) - a dead id here
         // still gets caught right after by Processor::processRenamedShow()'s
         // own follow-up Series::sync() call, so it doesn't need validating
-        // against TheTVDB again here
-        if (count($candidates) === 1) {
+        // against TheTVDB again here. Never applies to a fuzzy hit though
+        // (see this class' own docblock) - that always falls through to the
+        // resolution screen below, even alone.
+        if (!$isFuzzy && count($candidates) === 1) {
             return array(
                 'status'     => 'matched',
                 'tvdb_id'    => (int) $candidates[0]['tvdb_id'],
@@ -78,7 +85,7 @@ final class SeriesMatcher
         if (count($liveCandidates) === 0) {
             return array('status' => 'no_match', 'tvdb_id' => null, 'candidates' => array());
         }
-        if (count($liveCandidates) === 1) {
+        if (!$isFuzzy && count($liveCandidates) === 1) {
             return array(
                 'status'     => 'matched',
                 'tvdb_id'    => (int) $liveCandidates[0]['tvdb_id'],
@@ -105,7 +112,7 @@ final class SeriesMatcher
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return array{items: array<int, array<string, mixed>>, fuzzy: bool}
      */
     private function findCandidates(string $name): array
     {
@@ -114,18 +121,59 @@ final class SeriesMatcher
         $results = $this->client->search($name, 0, 'eng')['results'] ?? array();
         $matches = self::filterMatchingName($results, $target);
         if (count($matches) > 0) {
-            return $matches;
+            return array('items' => $matches, 'fuzzy' => false);
         }
 
         foreach (self::fallbackQueries($name) as $fallbackQuery) {
             $fallbackResults = $this->client->search($fallbackQuery, 0, 'eng')['results'] ?? array();
             $fallbackMatches = self::filterMatchingName($fallbackResults, $target);
             if (count($fallbackMatches) > 0) {
-                return $fallbackMatches;
+                return array('items' => $fallbackMatches, 'fuzzy' => false);
             }
         }
 
-        return array();
+        // nothing came back as an exact name match anywhere - see
+        // MovieMatcher::rankFuzzyMatches()'s own docblock, applied here
+        // against the plain search's own raw results only
+        $fuzzyMatches = self::rankFuzzyMatches($results, $target);
+        if (count($fuzzyMatches) > 0) {
+            return array('items' => $fuzzyMatches, 'fuzzy' => true);
+        }
+
+        return array('items' => array(), 'fuzzy' => false);
+    }
+
+    /**
+     * identical logic to MovieMatcher::rankFuzzyMatches() - see that
+     * class' own docblock; kept as its own copy for the same reason
+     * fallbackQueries() below is
+     *
+     * @param array<int, array<string, mixed>> $results
+     * @return array<int, array<string, mixed>>
+     */
+    private static function rankFuzzyMatches(array $results, string $target): array
+    {
+        $targetWords = array_values(array_filter(explode(' ', $target)));
+        if (count($targetWords) === 0) {
+            return array();
+        }
+
+        $scored = array();
+        foreach ($results as $result) {
+            $candidateName = self::normalize($result['name'] ?? '');
+            if ($candidateName === '') {
+                continue;
+            }
+            $matchedWords = array_filter($targetWords, fn(string $word): bool => str_contains($candidateName, $word));
+            $score        = count($matchedWords) / count($targetWords);
+            if ($score > 0.5) {
+                $scored[] = array('result' => $result, 'score' => $score);
+            }
+        }
+
+        usort($scored, fn(array $a, array $b): int => $b['score'] <=> $a['score']);
+
+        return array_slice(array_column($scored, 'result'), 0, 10);
     }
 
     /**
