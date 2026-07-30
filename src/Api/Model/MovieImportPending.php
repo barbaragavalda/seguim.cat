@@ -166,28 +166,33 @@ class MovieImportPending extends Model
     }
 
     /**
-     * Applies the user's chosen TheTVDB movie for a pending title - syncs
-     * it/them (same lazy-mirror sync() every other movie endpoint uses),
-     * then replays the watchlist/watched/rewatch state that was snapshotted
-     * at import time, exactly as Processor::processMovies() would have done
+     * Applies the user's chosen TheTVDB movie(s) for a pending title - syncs
+     * each (same lazy-mirror sync() every other movie endpoint uses), then
+     * replays the watchlist/watched/rewatch state that was snapshotted at
+     * import time, exactly as Processor::processMovies() would have done
      * for a confident match. Removes the pending row once applied.
      *
-     * $tvdbIds can have more than one entry - TV Time's own export
-     * sometimes has no way to tell two real movies apart under one title
-     * (e.g. "Mulan" 1998 vs 2020, both watched), so the same snapshotted
-     * state is applied to each chosen id independently rather than forcing
-     * a single pick. There's genuinely no way to know from the source data
-     * whether a single recorded watch was of one of them or both - this is
-     * the user's own call, made with the poster+year in front of them
+     * $watchedTvdbIds/$pendingTvdbIds can together have more than one entry
+     * - TV Time's own export sometimes has no way to tell two real movies
+     * apart under one title (e.g. "Mulan" 1998 vs 2020), and when it also
+     * has no release date for either uuid (confirmed empirically: about
+     * half of one real user's tracked movies), TvTimeImport\Parser can't
+     * even tell whether that's the same film re-followed or two different
+     * ones - so this screen lets the user split the snapshot's own
+     * watched_at across candidates by hand instead of guessing: a candidate
+     * in $watchedTvdbIds gets it applied (this pending entry might not even
+     * have one, e.g. a plain "to watch" that was never watched), one in
+     * $pendingTvdbIds is added to the watchlist only, left unwatched -
+     * because the user knows they watched one version but not the other,
+     * which the source data alone can't say.
      *
-     * @param array<int> $tvdbIds
      * @return ?bool null if no such pending row belongs to this user, false
      *               if the row exists but none of the chosen ids resolve on
      *               TheTVDB right now (e.g. a candidate TheTVDB has since
      *               merged/deleted - confirmed to happen in practice: two
      *               candidates sharing a name/year, one already dead)
      */
-    public function resolve(int $id, int $idUser, array $tvdbIds, Client $client): ?bool
+    public function resolve(int $id, int $idUser, array $watchedTvdbIds, array $pendingTvdbIds, Client $client): ?bool
     {
         $pending = $this->findOwnedByUser($id, $idUser);
         if ($pending === null) {
@@ -198,15 +203,11 @@ class MovieImportPending extends Model
         $userListMovie = new UserListMovie();
 
         $appliedAny = false;
-        foreach ($tvdbIds as $tvdbId) {
-            $movie = new Movie();
-            $info  = $movie->sync($tvdbId, $client);
-            if (empty($info)) {
-                // one bad id among several shouldn't block the others
+        foreach ($watchedTvdbIds as $tvdbId) {
+            $info = $this->applyCandidate($idUser, (int) $tvdbId, $pending, $linkedLists, $userListMovie, $client);
+            if ($info === null) {
                 continue;
             }
-
-            (new MovieWatchlist())->addFromImport($idUser, $info['id_movie'], $pending['watchlist_created_at']);
 
             if ($pending['watched_at'] !== null) {
                 (new WatchedMovie())->markWatched($idUser, $info['id_movie'], $pending['watched_at']);
@@ -214,16 +215,13 @@ class MovieImportPending extends Model
             foreach (json_decode($pending['rewatch_at'], true) ?? array() as $rewatchAt) {
                 (new WatchedMovie())->markRewatched($idUser, $info['id_movie'], $rewatchAt);
             }
-
-            // this movie was also wanted as a member of one or more lists
-            // (Processor::processLists() linked it here instead of silently
-            // dropping it - see movie_import_pending_list's own docblock) -
-            // now that it's actually synced, add it to each of them too
-            foreach ($linkedLists as $linked) {
-                $userListMovie->add($linked['id_user_list'], (int) $info['id_movie'], $linked['added_at']);
-            }
-
             $appliedAny = true;
+        }
+        foreach ($pendingTvdbIds as $tvdbId) {
+            $info = $this->applyCandidate($idUser, (int) $tvdbId, $pending, $linkedLists, $userListMovie, $client);
+            if ($info !== null) {
+                $appliedAny = true;
+            }
         }
 
         if (!$appliedAny) {
@@ -232,6 +230,37 @@ class MovieImportPending extends Model
 
         $this->delete((int) $pending['id_movie_import_pending']);
         return true;
+    }
+
+    /**
+     * syncs one chosen candidate and adds it to the watchlist (+ whichever
+     * lists this pending title was also wanted in) - the part every
+     * candidate needs regardless of whether it ends up marked watched, see
+     * resolve()'s own docblock
+     *
+     * @return ?array the synced movie's own info row, null if it doesn't
+     *                resolve on TheTVDB right now
+     */
+    private function applyCandidate(int $idUser, int $tvdbId, array $pending, array $linkedLists, UserListMovie $userListMovie, Client $client): ?array
+    {
+        $movie = new Movie();
+        $info  = $movie->sync($tvdbId, $client);
+        if (empty($info)) {
+            // one bad id among several shouldn't block the others
+            return null;
+        }
+
+        (new MovieWatchlist())->addFromImport($idUser, $info['id_movie'], $pending['watchlist_created_at']);
+
+        // this movie was also wanted as a member of one or more lists
+        // (Processor::processLists() linked it here instead of silently
+        // dropping it - see movie_import_pending_list's own docblock) -
+        // now that it's actually synced, add it to each of them too
+        foreach ($linkedLists as $linked) {
+            $userListMovie->add($linked['id_user_list'], (int) $info['id_movie'], $linked['added_at']);
+        }
+
+        return $info;
     }
 
     /**
