@@ -174,16 +174,18 @@ class Watchlist extends Model
     }
 
     /**
-     * series with at least one watched episode AND still something left to
-     * watch, most-recently-watched first (i.e. "continue watching") - a
-     * series the user has fully caught up on (remaining_episodes reaches 0)
-     * drops out of this list; it reappears on its own once a new episode
-     * airs, since remaining_episodes is computed fresh every call, not
-     * stored. Not paginated, unlike listNotStarted(): a personal tracker's
-     * in-progress list stays small by nature, so the extra page/hasMore
-     * surface isn't worth it here. Archived/removed shows (only ever set by
-     * the TV Time importer) are excluded here too, same as listNotStarted()
-     * - the rows themselves aren't deleted, just hidden from both lists.
+     * series with at least one watched episode AND the last aired regular
+     * episode still unwatched, most-recently-watched first (i.e. "continue
+     * watching") - a series drops out of this list once its finale is
+     * watched (same "finished" definition as listByStatus()'s own
+     * $watchedLastEpisode - see that method's docblock), even if earlier
+     * gaps are still unwatched; it reappears on its own if a new episode
+     * airs later, since this is computed fresh every call, not stored. Not
+     * paginated, unlike listNotStarted(): a personal tracker's in-progress
+     * list stays small by nature, so the extra page/hasMore surface isn't
+     * worth it here. Archived/removed shows (only ever set by the TV Time
+     * importer) are excluded here too, same as listNotStarted() - the rows
+     * themselves aren't deleted, just hidden from both lists.
      * $idAppacmanLang and the name/overview/image/next_episode/
      * remaining_episodes treatment are the same as listNotStarted(), see
      * that method's docblock
@@ -208,7 +210,42 @@ class Watchlist extends Model
         $rows   = $this->mysql->query($sql, $params);
         $rows   = $this->finalizeRows($rows, $idUser, $idAppacmanLang);
 
-        return array_values(array_filter($rows, static fn(array $row): bool => $row['remaining_episodes'] > 0));
+        return array_values(array_filter(
+            $rows,
+            fn(array $row): bool => !$this->hasWatchedLastEpisode($idUser, (int) $row['id_serie']),
+        ));
+    }
+
+    /**
+     * whether $idUser has watched $idSerie's last aired regular episode -
+     * the shared "finished" definition behind listByStatus()'s own
+     * $watchedLastEpisode SQL fragment and listWatching()'s own filter, see
+     * either one's docblock. A PHP-side per-series helper (rather than a
+     * SQL fragment like listByStatus() needs) since listWatching() already
+     * loops its rows one at a time in finalizeRows() to compute
+     * next_episode/remaining_episodes the same way
+     */
+    private function hasWatchedLastEpisode(int $idUser, int $idSerie): bool
+    {
+        $sql    = '
+            SELECT 1
+            FROM user_episode_watched uew
+            WHERE uew.id_user = :id_user
+              AND uew.id_episode = (
+                  SELECT e.id_episode
+                  FROM episode e
+                  WHERE e.id_serie = :id_serie
+                    AND e.season_number > 0
+                    AND e.aired IS NOT NULL AND e.aired <= CURDATE()
+                  ORDER BY e.season_number DESC, e.episode_number DESC
+                  LIMIT 1
+              )
+        ';
+        $params = array(
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+        );
+        return count($this->mysql->query($sql, $params)) > 0;
     }
 
     /**
@@ -273,15 +310,26 @@ class Watchlist extends Model
             throw new \InvalidArgumentException('Unknown watchlist status: ' . $status);
         }
 
-        $hasRemaining = '
+        // a series counts as "finished" once its last aired regular episode
+        // is watched, even with earlier gaps still unwatched (confirmed
+        // with the user: watching the finale is what they mean by
+        // "finished", not a full gap-free watch-through) - deliberately NOT
+        // "no unwatched aired episodes anywhere", which used to be this
+        // status' definition
+        $watchedLastEpisode = '
             EXISTS (
                 SELECT 1
-                FROM episode er
-                LEFT JOIN user_episode_watched uewr ON uewr.id_episode = er.id_episode AND uewr.id_user = w.id_user
-                WHERE er.id_serie = s.id_serie
-                  AND er.season_number > 0
-                  AND er.aired IS NOT NULL AND er.aired <= CURDATE()
-                  AND uewr.id_episode IS NULL
+                FROM user_episode_watched uewl
+                WHERE uewl.id_user = w.id_user
+                  AND uewl.id_episode = (
+                      SELECT le.id_episode
+                      FROM episode le
+                      WHERE le.id_serie = s.id_serie
+                        AND le.season_number > 0
+                        AND le.aired IS NOT NULL AND le.aired <= CURDATE()
+                      ORDER BY le.season_number DESC, le.episode_number DESC
+                      LIMIT 1
+                  )
             )
         ';
         $hasWatched = '
@@ -339,7 +387,7 @@ class Watchlist extends Model
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
-                  AND ' . $hasWatched . ' AND ' . $hasRemaining . $searchCondition . '
+                  AND ' . $hasWatched . ' AND NOT ' . $watchedLastEpisode . $searchCondition . '
                 ORDER BY (
                     SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3
                     INNER JOIN episode e3 ON e3.id_episode = uew3.id_episode
@@ -353,7 +401,7 @@ class Watchlist extends Model
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
-                  AND ' . $hasWatched . ' AND NOT ' . $hasRemaining . $searchCondition . '
+                  AND ' . $hasWatched . ' AND ' . $watchedLastEpisode . $searchCondition . '
                 ORDER BY (
                     SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3
                     INNER JOIN episode e3 ON e3.id_episode = uew3.id_episode

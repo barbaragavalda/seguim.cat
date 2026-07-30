@@ -116,9 +116,12 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     `airsBeforeSeason`/`airsBeforeEpisode`/`finaleType` are set inconsistently on both kinds in both
     shows), so there's no sound way to count only the specials that matter. Unaired episodes are
     excluded too - nothing to watch yet. `remaining_episodes` is computed fresh on every call, not
-    stored, which is also why a series that's fully caught up (`remaining_episodes` reaches 0)
-    simply drops out of `watching` rather than needing any explicit "mark as finished" step - it
-    reappears there on its own once a new episode airs.
+    stored - but it's purely informational now, not what drives `watching`/`finished` (see below): a
+    series can have `remaining_episodes > 0` (earlier gaps still unwatched) and still be `finished`,
+    since watching the finale is what "finished" means here, not a full gap-free watch-through
+    (confirmed with the user after they noticed a show with unwatched early episodes still counted
+    as in-progress). A series drops out of `watching` the moment its last aired regular episode is
+    watched, and reappears there on its own if a new episode later airs.
 
     `not-started` additionally returns `premiere_in_days`: a series with zero watched episodes can
     have `remaining_episodes = 0` for two very different reasons - already fully watched (which
@@ -136,12 +139,14 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     distinct from the two opinionated home-screen lists above - every one of its 6 `?status=`
     values is paginated (unlike `watching`), since `archived`/`removed`/`finished` alone can
     accumulate hundreds of rows after a TV Time import. 5 of the 6 statuses partition every
-    possible combination of `archived`/`removed`/watched-vs-remaining exactly once, computed at
-    the SQL level (not filtered in PHP afterwards) so pagination stays correct per status;
-    `removed` wins over `archived` when a series is somehow flagged as both. The 6th, `all`, is
-    unfiltered - every series in the watchlist regardless of those flags. `?search=` further
-    filters by title (a plain `LIKE`, no full-text index - this app's personal-tracker scale
-    doesn't need one).
+    possible combination of `archived`/`removed`/watched-vs-last-episode-watched exactly once,
+    computed at the SQL level (not filtered in PHP afterwards) so pagination stays correct per
+    status; `removed` wins over `archived` when a series is somehow flagged as both. `watching` vs
+    `finished` splits on whether the series' last aired regular episode has been watched, not on
+    whether every aired episode has - a show can be `finished` with earlier gaps still unwatched
+    (see `watching`'s own docblock in `Watchlist::listByStatus()`). The 6th, `all`, is unfiltered -
+    every series in the watchlist regardless of those flags. `?search=` further filters by title (a
+    plain `LIKE`, no full-text index - this app's personal-tracker scale doesn't need one).
 
   - **TV Time importer** (`src/Api/Model/TvTimeImport/`, `src/Api/Controller/Import/`): lets a user
     upload the GDPR data export TV Time offered before shutting down, recovering their watchlist
