@@ -95,7 +95,8 @@ final class Parser
 
     /**
      * none of these have a tv_show_id column - only tv_show_name - so they
-     * need $nameToId (built from followed_tv_show.csv) to resolve one
+     * need $nameToId (built by parseFollowedShows() from followed_tv_show.csv
+     * and user_tv_show_data.csv) to resolve one
      */
     private const array NAMED_WATCH_LOG_FILES = array(
         'seen_episode.csv',
@@ -119,7 +120,7 @@ final class Parser
      */
     public function parse(string $dir): array
     {
-        [$shows, $nameToId] = $this->parseFollowedShows($dir . '/followed_tv_show.csv');
+        [$shows, $nameToId] = $this->parseFollowedShows($dir);
         $showNames           = array_flip($nameToId);
         $episodeNumbers      = array();
 
@@ -137,12 +138,14 @@ final class Parser
         $lists          = $this->reorderLists($lists, $listMeta['order']);
         $movies         = $this->parseMovies($dir . '/tracking-prod-records.csv');
 
-        // a show with watch history but no row in followed_tv_show.csv at
-        // all was unfollowed/deleted in TVTime at some point - still worth
-        // importing the history, just flagged so it doesn't show up as an
-        // active watchlist entry. No follow date survives for these (the
-        // row itself is gone), so created_at is left null - the importer
-        // falls back to "now" for those specifically.
+        // a show with watch history but no row in *either*
+        // followed_tv_show.csv or user_tv_show_data.csv (parseFollowedShows()
+        // above already covers a show present in just one of the two) was
+        // unfollowed/deleted in TV Time so long ago it dropped out of both -
+        // still worth importing the history, just flagged so it doesn't show
+        // up as an active watchlist entry. No follow date survives for
+        // these (the row itself is gone), so created_at is left null - the
+        // importer falls back to "now" for those specifically.
         foreach (array_unique(array_merge(array_keys($watched), array_keys($rewatches))) as $tvdbId) {
             if (!isset($shows[$tvdbId])) {
                 $shows[$tvdbId] = array('archived' => false, 'removed' => true, 'created_at' => null);
@@ -161,25 +164,65 @@ final class Parser
     }
 
     /**
+     * followed_tv_show.csv turns out to be a log of follow *actions*, not
+     * the show's current state - confirmed empirically against a real
+     * export: 171 shows user_tv_show_data.csv's own `is_followed` still
+     * marks as followed (82 of them with real watch history, e.g. "Widow's
+     * Bay") are missing from followed_tv_show.csv entirely, and 285 it
+     * marks `is_followed=0` (unfollowed/"deixada de veure" in TV Time) are
+     * still sitting in followed_tv_show.csv looking active. Relying on
+     * followed_tv_show.csv alone (the old behavior) got both directions
+     * wrong: a still-followed show with no row there fell through to the
+     * "watched but absent -> removed" fallback below (or, if it had no
+     * watch history either, was never imported at all), while an unfollowed
+     * show that still had a followed_tv_show.csv row was hardcoded to
+     * `removed = false` regardless of anything else. `is_followed` is the
+     * one TV Time itself would show as "still following" today, so it now
+     * decides `removed`; followed_tv_show.csv only still supplies
+     * `archived`/`created_at` when it happens to have a row for the id (a
+     * handful of very old follows don't appear in user_tv_show_data.csv at
+     * all - those keep the old followed_tv_show.csv-only behavior via the
+     * `?? false` fallback below).
+     *
      * @return array{0: array<int, array{archived: bool, removed: bool, created_at: ?string}>, 1: array<string, int>}
      */
-    private function parseFollowedShows(string $path): array
+    private function parseFollowedShows(string $dir): array
     {
-        $shows    = array();
+        $followed = array();
         $nameToId = array();
-        foreach ($this->readCsv($path) as $row) {
+        foreach ($this->readCsv($dir . '/followed_tv_show.csv') as $row) {
             $tvdbId = (int) ($row['tv_show_id'] ?? 0);
             if ($tvdbId === 0) {
                 continue;
             }
-            $shows[$tvdbId] = array(
+            $followed[$tvdbId] = array(
                 'archived'   => ($row['archived'] ?? '0') === '1',
-                'removed'    => false,
                 'created_at' => ($row['created_at'] ?? '') !== '' ? $row['created_at'] : null,
             );
             if (($row['tv_show_name'] ?? '') !== '') {
                 $nameToId[$row['tv_show_name']] = $tvdbId;
             }
+        }
+
+        $isFollowed = array();
+        foreach ($this->readCsv($dir . '/user_tv_show_data.csv') as $row) {
+            $tvdbId = (int) ($row['tv_show_id'] ?? 0);
+            if ($tvdbId === 0) {
+                continue;
+            }
+            $isFollowed[$tvdbId] = ($row['is_followed'] ?? '0') === '1';
+            if (($row['tv_show_name'] ?? '') !== '' && !isset($nameToId[$row['tv_show_name']])) {
+                $nameToId[$row['tv_show_name']] = $tvdbId;
+            }
+        }
+
+        $shows = array();
+        foreach (array_unique(array_merge(array_keys($followed), array_keys($isFollowed))) as $tvdbId) {
+            $shows[$tvdbId] = array(
+                'archived'   => $followed[$tvdbId]['archived'] ?? false,
+                'removed'    => isset($isFollowed[$tvdbId]) ? !$isFollowed[$tvdbId] : false,
+                'created_at' => $followed[$tvdbId]['created_at'] ?? null,
+            );
         }
 
         return array($shows, $nameToId);
