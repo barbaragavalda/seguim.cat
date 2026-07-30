@@ -116,11 +116,15 @@ class Client
     }
 
     /**
-     * unlike getSeries()/getSeriesBackground() (two separate TheTVDB
-     * requests), a movie's own GET /movies/{id}/extended already returns its
-     * full artworks list inline - confirmed empirically (57 artworks back
-     * for "Encanto", including type 15 backgrounds) - so this is the only
-     * request a movie sync ever needs
+     * a movie's own GET /movies/{id}/extended already returns its full
+     * artworks list inline - confirmed empirically (57 artworks back for
+     * "Encanto", including type 15 backgrounds) - so no separate background
+     * request is needed, unlike getSeries()/getSeriesBackground(). It does
+     * NOT include a top-level 'overview' though (only 'overviewTranslations',
+     * a list of language codes) - confirmed empirically against the real API
+     * - unlike a series' base record, which has one. A second request fills
+     * it in from the movie's own original-language translation, the same
+     * text 'overview' would have held had TheTVDB included it directly.
      */
     public function getMovie(int $tvdbId): array
     {
@@ -131,6 +135,10 @@ class Client
         }
 
         $data['background'] = $this->getMovieBackground($data['artworks'] ?? array());
+        if (!empty($data['originalLanguage'])) {
+            $translation       = $this->getMovieTranslation($tvdbId, $data['originalLanguage']);
+            $data['overview']  = $translation['overview'] ?? null;
+        }
         return $data;
     }
 

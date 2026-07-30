@@ -12,9 +12,9 @@ final class Languages
 {
 
     private const array ALL = array(
-        1 => array('culture' => 'ca', 'tvdb' => 'cat'),
-        2 => array('culture' => 'es', 'tvdb' => 'spa'),
-        3 => array('culture' => 'en', 'tvdb' => 'eng'),
+        1 => array('culture' => 'ca', 'tvdb' => 'cat', 'country' => 'esp'),
+        2 => array('culture' => 'es', 'tvdb' => 'spa', 'country' => 'esp'),
+        3 => array('culture' => 'en', 'tvdb' => 'eng', 'country' => 'usa'),
     );
 
     public static function idForCulture(string $culture): ?int
@@ -41,6 +41,22 @@ final class Languages
     {
         $id = self::idForCulture($culture);
         return $id !== null ? self::tvdbCode($id) : null;
+    }
+
+    /**
+     * used by Api\Model\MovieContentRating::bestForCountry() - content
+     * ratings are tied to a country, not a language, but the app only has
+     * one culture per country pair (ca/es -> Spain, en -> USA) so this is
+     * still a plain lookup, not a real preference list
+     */
+    public static function tvdbCountryForCulture(string $culture): ?string
+    {
+        foreach (self::ALL as $language) {
+            if ($language['culture'] === $culture) {
+                return $language['country'];
+            }
+        }
+        return null;
     }
 
 }

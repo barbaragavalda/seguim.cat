@@ -4,9 +4,14 @@ namespace Api\Controller\Movie;
 
 use Api\Controller\Controller;
 use Api\Model\Movie as MovieModel;
+use Api\Model\MovieCast;
+use Api\Model\MovieContentRating;
+use Api\Model\MovieGenre;
 use Api\Model\MovieLang;
+use Api\Model\MovieTrailer;
 use Api\Model\MovieWatchlist;
 use Api\Model\TheTvdb\Client;
+use Api\Model\TheTvdb\Languages;
 use Api\Model\WatchedMovie;
 use Core\Controller\CacheManager;
 use Core\Routing\Attribute\Route;
@@ -49,6 +54,21 @@ class Detail extends Controller
         $translation      = (new MovieLang())->syncForLanguage($info['id_movie'], $tvdbId, $culture, $this->client);
         $info['name']     = $translation['name'] ?: $info['default_name'];
         $info['overview'] = $translation['overview'] ?: $info['default_overview'];
+
+        // none of these have per-language text of their own to fall back on
+        // - see MovieGenre/MovieCast/MovieContentRating/MovieTrailer's own
+        // docblocks for why - only genre labels vary by culture, and that's
+        // handled client-side (l10n by slug), not here
+        $info['genres']         = (new MovieGenre())->forMovie($info['id_movie']);
+        $info['cast']           = (new MovieCast())->forMovie($info['id_movie']);
+        $info['content_rating'] = (new MovieContentRating())->bestForCountry(
+            $info['id_movie'],
+            Languages::tvdbCountryForCulture($culture),
+        );
+        $info['trailer'] = (new MovieTrailer())->bestForLanguage(
+            $info['id_movie'],
+            Languages::tvdbCodeForCulture($culture),
+        );
 
         // $this->user is null for an anonymous request (default_token, no
         // real user logged in) - movie detail itself is public, only the
