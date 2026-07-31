@@ -694,9 +694,10 @@ CREATE TABLE `movie_trailer` (
 
 -- ----------------------------
 -- Table structure for user_movie_watchlist (counterpart of user_serie_watchlist -
--- no archived/removed columns here: those exist on the series table purely
--- because of TV Time import quirks around unfollowed/archived shows, which
--- don't apply the same way to a movie import - see Api\Model\MovieWatchlist)
+-- no watch_later/stopped_watching columns here: those exist on the series
+-- table purely because of TV Time import quirks around unfollowed/archived
+-- shows, which don't apply the same way to a movie import - see
+-- Api\Model\MovieWatchlist)
 -- ----------------------------
 DROP TABLE IF EXISTS `user_movie_watchlist`;
 CREATE TABLE `user_movie_watchlist` (
@@ -736,12 +737,19 @@ CREATE TABLE `user_serie_watchlist` (
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_serie` mediumint(8) unsigned NOT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  -- both only ever set by the TVTime importer (see tvtime_import below):
-  -- archived = still followed in TVTime but marked archived there; removed =
-  -- has watch history but isn't in TVTime's followed list at all anymore
-  -- (unfollowed/deleted). Regular Watchlist::add() always leaves both at 0.
-  `archived` tinyint(1) unsigned NOT NULL DEFAULT 0,
-  `removed` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  -- watch_later ("veure més tard") is set by hand (Api\Controller\Watchlist\
+  -- {Archive,Unarchive}) or by the TV Time importer, for a show TV Time's
+  -- own user_show_special_status.csv marks `status=for_later` (see
+  -- Api\Model\TvTimeImport\Parser's own docblock). stopped_watching
+  -- ("deixades de veure") is set both by hand (MarkRemoved/Restore) and by
+  -- the importer, for a show that has watch history but isn't in TV Time's
+  -- followed list at all anymore (unfollowed/deleted) or that TV Time
+  -- itself marks archived there (see Parser). A show the user has already
+  -- watched through to its last aired episode never comes out of import as
+  -- either - see Watchlist::hasWatchedLastEpisode(), reused by the importer
+  -- for exactly this. Regular Watchlist::add() always leaves both at 0.
+  `watch_later` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  `stopped_watching` tinyint(1) unsigned NOT NULL DEFAULT 0,
   PRIMARY KEY (`id_user`, `id_serie`) USING BTREE,
   KEY `id_serie` (`id_serie`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -918,8 +926,8 @@ CREATE TABLE `series_import_pending` (
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_tvtime_import` mediumint(8) unsigned NOT NULL,
   `show_name` varchar(255) NOT NULL,
-  `archived` tinyint(1) NOT NULL DEFAULT 0,
-  `removed` tinyint(1) NOT NULL DEFAULT 0,
+  `watch_later` tinyint(1) NOT NULL DEFAULT 0,
+  `stopped_watching` tinyint(1) NOT NULL DEFAULT 0,
   `watchlist_created_at` timestamp NULL DEFAULT NULL,
   -- JSON array of {season, episode, at} - every watched episode this show
   -- had under its old (dead) tvdb_id, snapshotted since the import's own

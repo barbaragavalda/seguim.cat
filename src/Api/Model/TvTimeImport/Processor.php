@@ -283,6 +283,16 @@ final class Processor
                 );
             }
 
+            // the user's own watch history - not TheTVDB's status, not TV
+            // Time's own flags - decides whether a show counts as finished
+            // for watch_later/stopped_watching purposes: once the last
+            // aired regular episode is watched, deferring or having
+            // stopped on it no longer makes sense
+            if ($watchlist->hasWatchedLastEpisode($idUser, $info['id_serie'])) {
+                $watchlist->setArchived($idUser, $info['id_serie'], false);
+                $watchlist->setRemoved($idUser, $info['id_serie'], false);
+            }
+
             $doneShowIds[] = $tvdbSeriesId;
         }
 
@@ -375,6 +385,13 @@ final class Processor
                 $entry['at'],
                 $idTvtimeImport
             );
+        }
+
+        // same "user's own watch history decides finished, not TheTVDB's
+        // status" reasoning as processShows() above
+        if ($watchlist->hasWatchedLastEpisode($idUser, $info['id_serie'])) {
+            $watchlist->setArchived($idUser, $info['id_serie'], false);
+            $watchlist->setRemoved($idUser, $info['id_serie'], false);
         }
 
         return array('pending' => false, 'episodes_watched' => $episodesWatched, 'episodes_rewatched' => $episodesRewatched);

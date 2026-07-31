@@ -38,11 +38,11 @@ class SeriesImportPending extends Model
     ): void {
         $sql    = '
             INSERT INTO series_import_pending
-                (id_user, id_tvtime_import, show_name, archived, removed, watchlist_created_at, watched_episodes, rewatch_episodes, candidates)
+                (id_user, id_tvtime_import, show_name, watch_later, stopped_watching, watchlist_created_at, watched_episodes, rewatch_episodes, candidates)
             VALUES
-                (:id_user, :id_tvtime_import, :show_name, :archived, :removed, :watchlist_created_at, :watched_episodes, :rewatch_episodes, :candidates)
+                (:id_user, :id_tvtime_import, :show_name, :watch_later, :stopped_watching, :watchlist_created_at, :watched_episodes, :rewatch_episodes, :candidates)
             ON DUPLICATE KEY UPDATE
-                id_tvtime_import = :id_tvtime_import_upd, archived = :archived_upd, removed = :removed_upd,
+                id_tvtime_import = :id_tvtime_import_upd, watch_later = :watch_later_upd, stopped_watching = :stopped_watching_upd,
                 watchlist_created_at = :watchlist_created_at_upd, watched_episodes = :watched_episodes_upd,
                 rewatch_episodes = :rewatch_episodes_upd, candidates = :candidates_upd
         ';
@@ -51,10 +51,10 @@ class SeriesImportPending extends Model
             'id_tvtime_import'           => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
             'id_tvtime_import_upd'       => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
             'show_name'                  => array('value' => $showName, 'type' => PDO::PARAM_STR),
-            'archived'                   => array('value' => $flags['archived'] ? 1 : 0, 'type' => PDO::PARAM_INT),
-            'archived_upd'               => array('value' => $flags['archived'] ? 1 : 0, 'type' => PDO::PARAM_INT),
-            'removed'                    => array('value' => $flags['removed'] ? 1 : 0, 'type' => PDO::PARAM_INT),
-            'removed_upd'                => array('value' => $flags['removed'] ? 1 : 0, 'type' => PDO::PARAM_INT),
+            'watch_later'                => array('value' => $flags['archived'] ? 1 : 0, 'type' => PDO::PARAM_INT),
+            'watch_later_upd'            => array('value' => $flags['archived'] ? 1 : 0, 'type' => PDO::PARAM_INT),
+            'stopped_watching'           => array('value' => $flags['removed'] ? 1 : 0, 'type' => PDO::PARAM_INT),
+            'stopped_watching_upd'       => array('value' => $flags['removed'] ? 1 : 0, 'type' => PDO::PARAM_INT),
             'watchlist_created_at'       => array('value' => $flags['created_at'], 'type' => PDO::PARAM_STR),
             'watchlist_created_at_upd'   => array('value' => $flags['created_at'], 'type' => PDO::PARAM_STR),
             'watched_episodes'           => array('value' => json_encode($watchedEpisodes), 'type' => PDO::PARAM_STR),
@@ -236,6 +236,7 @@ class SeriesImportPending extends Model
         $rewatchEpisodes = json_decode($pending['rewatch_episodes'], true) ?? array();
         $linkedLists     = $this->linkedLists((int) $pending['id_series_import_pending']);
         $userListSerie   = new UserListSerie();
+        $watchlist       = new Watchlist();
 
         $appliedAny = false;
         foreach ($tvdbIds as $tvdbId) {
@@ -253,11 +254,11 @@ class SeriesImportPending extends Model
                 $idEpisodeBySeasonEpisode[$key] = $episodeRow['id_episode'];
             }
 
-            (new Watchlist())->addFromImport(
+            $watchlist->addFromImport(
                 $idUser,
                 $info['id_serie'],
-                (bool) $pending['archived'],
-                (bool) $pending['removed'],
+                (bool) $pending['watch_later'],
+                (bool) $pending['stopped_watching'],
                 $pending['watchlist_created_at']
             );
 
@@ -285,6 +286,13 @@ class SeriesImportPending extends Model
             // now that it's actually synced, add it to each of them too
             foreach ($linkedLists as $linked) {
                 $userListSerie->add($linked['id_user_list'], (int) $info['id_serie'], $linked['added_at']);
+            }
+
+            // same "user's own watch history decides finished, not
+            // TheTVDB's status" reasoning as Processor's own two call sites
+            if ($watchlist->hasWatchedLastEpisode($idUser, $info['id_serie'])) {
+                $watchlist->setArchived($idUser, $info['id_serie'], false);
+                $watchlist->setRemoved($idUser, $info['id_serie'], false);
             }
 
             $appliedAny = true;

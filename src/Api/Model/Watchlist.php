@@ -27,9 +27,9 @@ class Watchlist extends Model
      * used only by the TV Time importer (Api\Model\TvTimeImport\Processor) -
      * an upsert rather than add()'s INSERT IGNORE, so re-running an import
      * (or importing after the show was already added normally) still
-     * updates the archived/removed flags rather than silently keeping
-     * whatever was there before. $createdAt preserves TV Time's own follow
-     * date (falls back to "now" when the export has none - see
+     * updates the watch_later/stopped_watching flags rather than silently
+     * keeping whatever was there before. $createdAt preserves TV Time's own
+     * follow date (falls back to "now" when the export has none - see
      * Parser::parse()'s "removed" shows) so listNotStarted()'s "most
      * recently added" ordering stays meaningful for imported shows instead
      * of every one of them tying for the import's own timestamp
@@ -37,18 +37,18 @@ class Watchlist extends Model
     public function addFromImport(int $idUser, int $idSerie, bool $archived, bool $removed, ?string $createdAt = null): void
     {
         $sql    = '
-            INSERT INTO user_serie_watchlist (id_user, id_serie, archived, removed, created)
-            VALUES (:id_user, :id_serie, :archived, :removed, :created)
-            ON DUPLICATE KEY UPDATE archived = :archived_upd, removed = :removed_upd
+            INSERT INTO user_serie_watchlist (id_user, id_serie, watch_later, stopped_watching, created)
+            VALUES (:id_user, :id_serie, :watch_later, :stopped_watching, :created)
+            ON DUPLICATE KEY UPDATE watch_later = :watch_later_upd, stopped_watching = :stopped_watching_upd
         ';
         $params = array(
-            'id_user'      => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_serie'     => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
-            'archived'     => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
-            'archived_upd' => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
-            'removed'      => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
-            'removed_upd'  => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
-            'created'      => array('value' => $createdAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
+            'id_user'              => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie'             => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'watch_later'          => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
+            'watch_later_upd'      => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
+            'stopped_watching'     => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+            'stopped_watching_upd' => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+            'created'              => array('value' => $createdAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
         );
         $this->mysql->query($sql, $params);
     }
@@ -63,13 +63,13 @@ class Watchlist extends Model
     {
         $sql    = '
             UPDATE user_serie_watchlist
-            SET archived = :archived
+            SET watch_later = :watch_later
             WHERE id_user = :id_user AND id_serie = :id_serie
         ';
         $params = array(
-            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
-            'archived' => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
+            'id_user'     => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie'    => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'watch_later' => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
         );
         $this->mysql->query($sql, $params);
     }
@@ -85,13 +85,13 @@ class Watchlist extends Model
     {
         $sql    = '
             UPDATE user_serie_watchlist
-            SET removed = :removed
+            SET stopped_watching = :stopped_watching
             WHERE id_user = :id_user AND id_serie = :id_serie
         ';
         $params = array(
-            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
-            'removed'  => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie'         => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'stopped_watching' => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
         );
         $this->mysql->query($sql, $params);
     }
@@ -153,7 +153,7 @@ class Watchlist extends Model
     public function getFlags(int $idUser, int $idSerie): array
     {
         $sql    = '
-            SELECT archived, removed
+            SELECT watch_later, stopped_watching
             FROM user_serie_watchlist
             WHERE id_user = :id_user AND id_serie = :id_serie
             LIMIT 1
@@ -168,8 +168,8 @@ class Watchlist extends Model
         }
         return array(
             'inWatchlist' => true,
-            'archived'    => (bool) $rows[0]['archived'],
-            'removed'     => (bool) $rows[0]['removed'],
+            'archived'    => (bool) $rows[0]['watch_later'],
+            'removed'     => (bool) $rows[0]['stopped_watching'],
         );
     }
 
@@ -199,7 +199,7 @@ class Watchlist extends Model
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
             INNER JOIN user_episode_watched uew ON uew.id_user = w.id_user
             INNER JOIN episode e ON e.id_episode = uew.id_episode AND e.id_serie = s.id_serie
-            WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
+            WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 0
             GROUP BY s.id_serie
             ORDER BY MAX(uew.watched_at) DESC
         ';
@@ -223,9 +223,13 @@ class Watchlist extends Model
      * either one's docblock. A PHP-side per-series helper (rather than a
      * SQL fragment like listByStatus() needs) since listWatching() already
      * loops its rows one at a time in finalizeRows() to compute
-     * next_episode/remaining_episodes the same way
+     * next_episode/remaining_episodes the same way. Public so
+     * Api\Model\TvTimeImport\Processor/SeriesImportPending can reuse the
+     * exact same definition to force watch_later/stopped_watching off a
+     * show the user has already finished, regardless of what TheTVDB's own
+     * (unrelated) status field says or what TV Time's export claims.
      */
-    private function hasWatchedLastEpisode(int $idUser, int $idSerie): bool
+    public function hasWatchedLastEpisode(int $idUser, int $idSerie): bool
     {
         $sql    = '
             SELECT 1
@@ -270,7 +274,7 @@ class Watchlist extends Model
             FROM user_serie_watchlist w
             INNER JOIN serie s ON s.id_serie = w.id_serie
             LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-            WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
+            WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 0
               AND NOT EXISTS (
                   SELECT 1
                   FROM user_episode_watched uew
@@ -359,7 +363,7 @@ class Watchlist extends Model
                 FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-                WHERE w.id_user = :id_user AND w.removed = 1' . $searchCondition . '
+                WHERE w.id_user = :id_user AND w.stopped_watching = 1' . $searchCondition . '
                 ORDER BY w.created DESC
                 LIMIT :limit OFFSET :offset
             ',
@@ -368,7 +372,7 @@ class Watchlist extends Model
                 FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 1' . $searchCondition . '
+                WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 1' . $searchCondition . '
                 ORDER BY w.created DESC
                 LIMIT :limit OFFSET :offset
             ',
@@ -377,7 +381,7 @@ class Watchlist extends Model
                 FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0 AND NOT ' . $hasWatched . $searchCondition . '
+                WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 0 AND NOT ' . $hasWatched . $searchCondition . '
                 ORDER BY w.created DESC
                 LIMIT :limit OFFSET :offset
             ',
@@ -386,7 +390,7 @@ class Watchlist extends Model
                 FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
+                WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 0
                   AND ' . $hasWatched . ' AND NOT ' . $watchedLastEpisode . $searchCondition . '
                 ORDER BY (
                     SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3
@@ -400,7 +404,7 @@ class Watchlist extends Model
                 FROM user_serie_watchlist w
                 INNER JOIN serie s ON s.id_serie = w.id_serie
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
-                WHERE w.id_user = :id_user AND w.removed = 0 AND w.archived = 0
+                WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 0
                   AND ' . $hasWatched . ' AND ' . $watchedLastEpisode . $searchCondition . '
                 ORDER BY (
                     SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3

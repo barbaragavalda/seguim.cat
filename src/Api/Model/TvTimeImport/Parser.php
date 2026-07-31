@@ -108,6 +108,26 @@ final class Parser
     );
 
     /**
+     * a specific TV Time-side data corruption confirmed against a real
+     * export: series/s_id 10000018 in both tracking-prod-records(.csv|
+     * -v2.csv) carries watch-episode rows for at least 10 completely
+     * unrelated shows (The Mike Douglas Show, Sturniolo Triplets, Kumovi,
+     * Real Life Lore, Večera za 5, Filmhaus, The Five, Austin City Limits,
+     * Lawmen: Bass Reeves, The Teacher) under one shared internal
+     * series_uuid, nominally named "Kids React to" in its own
+     * count-watch-episode-series summary row - none of these episodes are
+     * real watch events (confirmed: every single one shares a created_at
+     * within one of two few-minute windows, 2014-12-21 and 2015-01-06,
+     * regardless of the show; a real user's viewing history across ~1000
+     * shows is never this synchronized). The same corrupted episode_ids
+     * also get a second, duplicate row under a real-looking series id for
+     * several of the shows (e.g. s_id=70882 for "The Mike Douglas Show"
+     * alongside 10000018) - collectCorruptedEpisodeIds() below drops both
+     * copies wherever the episode_id appears, not just under this id.
+     */
+    private const string CORRUPTED_SERIES_ID = '10000018';
+
+    /**
      * @return array{
      *     shows: array<int, array{archived: bool, removed: bool, created_at: ?string}>,
      *     watched: array<int, array<int, string>>,
@@ -123,10 +143,14 @@ final class Parser
         [$shows, $nameToId] = $this->parseFollowedShows($dir);
         $showNames           = array_flip($nameToId);
         $episodeNumbers      = array();
+        $corruptedEpisodeIds = $this->collectCorruptedEpisodeIds(
+            $dir . '/tracking-prod-records.csv',
+            $dir . '/tracking-prod-records-v2.csv'
+        );
 
         $watched = array();
-        $this->mergeTrackingRecords($dir . '/tracking-prod-records.csv', $watched, $episodeNumbers, $showNames);
-        $this->mergeTrackingRecordsV2($dir . '/tracking-prod-records-v2.csv', $watched, $episodeNumbers, $showNames);
+        $this->mergeTrackingRecords($dir . '/tracking-prod-records.csv', $watched, $episodeNumbers, $showNames, $corruptedEpisodeIds);
+        $this->mergeTrackingRecordsV2($dir . '/tracking-prod-records-v2.csv', $watched, $episodeNumbers, $showNames, $corruptedEpisodeIds);
         foreach (self::NAMED_WATCH_LOG_FILES as $file) {
             $this->mergeNamedWatchLog($dir . '/' . $file, $nameToId, $watched, $episodeNumbers);
         }
@@ -140,15 +164,25 @@ final class Parser
 
         // a show with watch history but no row in *either*
         // followed_tv_show.csv or user_tv_show_data.csv (parseFollowedShows()
-        // above already covers a show present in just one of the two) was
-        // unfollowed/deleted in TV Time so long ago it dropped out of both -
-        // still worth importing the history, just flagged so it doesn't show
-        // up as an active watchlist entry. No follow date survives for
-        // these (the row itself is gone), so created_at is left null - the
-        // importer falls back to "now" for those specifically.
+        // above already covers a show present in just one of the two) - was
+        // unfollowed/deleted in TV Time so long ago it dropped out of both,
+        // or TV Time simply never carried it in those two files to begin
+        // with (confirmed to happen: some real watch history only ever
+        // shows up in the lower-level watch-log files, e.g.
+        // tracking-prod-records-v2.csv, never in either tracking file).
+        // Neither case is an explicit "the user stopped watching this"
+        // signal (unlike followed_tv_show.csv's own `archived` or
+        // user_tv_show_data.csv's own `is_followed=0`) - just missing
+        // metadata - so `removed` is left false here rather than inferred:
+        // still worth importing the history, added to the watchlist like
+        // any other show, letting its own watch progress (not a guess)
+        // decide whether it shows up as watching/finished. No follow date
+        // survives for these (the row itself is gone), so created_at is
+        // left null - the importer falls back to "now" for those
+        // specifically.
         foreach (array_unique(array_merge(array_keys($watched), array_keys($rewatches))) as $tvdbId) {
             if (!isset($shows[$tvdbId])) {
-                $shows[$tvdbId] = array('archived' => false, 'removed' => true, 'created_at' => null);
+                $shows[$tvdbId] = array('archived' => false, 'removed' => false, 'created_at' => null);
             }
         }
 
@@ -183,11 +217,34 @@ final class Parser
      * are still `is_followed=1`. That's not "haven't started this yet,
      * deliberately deferred" (this app's own `archived`) - it's "was
      * actively watching this, stopped, but never formally unfollowed it" -
-     * exactly this app's own `removed` ("deixades de veure"). TV Time has
-     * no export field that means "watch later" at all (an unstarted-but-
-     * still-followed show already surfaces as this app's own "not started"
-     * section without needing any flag for it), so `archived` is never set
-     * by the importer - only ever by the user, by hand, afterward.
+     * exactly this app's own `removed` ("deixades de veure").
+     *
+     * The genuine "watch later" signal instead lives in
+     * user_show_special_status.csv's own `status=for_later` rows (not
+     * discovered until later - a previous version of this docblock
+     * wrongly claimed no such field existed). Confirmed empirically
+     * against the same real export: 412/431 (95.6%) of `for_later` shows
+     * have zero watched episodes (`user_tv_show_data.csv`'s own
+     * `nb_episodes_seen`), unlike `archived` above - genuinely "haven't
+     * started, deliberately deferred". `for_later` disagrees with
+     * `is_followed=0` far more often than `archived` does (235/431), but
+     * almost always (230/235) for a show with zero watch history too -
+     * not a real "stopped watching", just a show TV Time never actually
+     * tracked as followed despite the user wanting to watch it later. So
+     * `for_later` wins over the unfollowed-implies-`removed` rule *unless*
+     * the show has real watch history, in which case `removed` still wins
+     * (never observed together with TV Time's own `archived` in practice,
+     * but that would win over both if it happened, being the more
+     * explicit/authoritative signal of the two).
+     *
+     * "Stopped watching" only ever applies to a show with at least one
+     * watched episode - the whole point of the flag is "started, then
+     * stopped". A show that would otherwise read as `removed` (TV Time's
+     * own `archived`, or unfollowed-and-not-`for_later`) but has zero
+     * watched episodes becomes `archived` ("watch later") instead, same
+     * bucket a genuine `for_later` show with no history gets - confirmed
+     * against a real import that this genuinely happens (39 shows, not a
+     * theoretical edge case).
      *
      * @return array{0: array<int, array{archived: bool, removed: bool, created_at: ?string}>, 1: array<string, int>}
      */
@@ -210,24 +267,54 @@ final class Parser
         }
 
         $isFollowed = array();
+        $hasWatched = array();
         foreach ($this->readCsv($dir . '/user_tv_show_data.csv') as $row) {
             $tvdbId = (int) ($row['tv_show_id'] ?? 0);
             if ($tvdbId === 0) {
                 continue;
             }
             $isFollowed[$tvdbId] = ($row['is_followed'] ?? '0') === '1';
+            $hasWatched[$tvdbId] = (int) ($row['nb_episodes_seen'] ?? 0) > 0;
             if (($row['tv_show_name'] ?? '') !== '' && !isset($nameToId[$row['tv_show_name']])) {
                 $nameToId[$row['tv_show_name']] = $tvdbId;
             }
         }
 
+        $forLater = array();
+        foreach ($this->readCsv($dir . '/user_show_special_status.csv') as $row) {
+            $tvdbId = (int) ($row['tv_show_id'] ?? 0);
+            if ($tvdbId === 0 || ($row['status'] ?? '') !== 'for_later') {
+                continue;
+            }
+            $forLater[$tvdbId] = true;
+        }
+
         $shows = array();
-        foreach (array_unique(array_merge(array_keys($followed), array_keys($isFollowed))) as $tvdbId) {
+        foreach (array_unique(array_merge(array_keys($followed), array_keys($isFollowed), array_keys($forLater))) as $tvdbId) {
+            // the corrupted pseudo-series itself (see CORRUPTED_SERIES_ID's
+            // own docblock) - present here too, e.g. user_tv_show_data.csv
+            // carries its own bogus "Kids React to" row for it - excluded
+            // entirely rather than let it resolve, by name search, to some
+            // unrelated real show with a fabricated "stopped watching" mark
+            if ((string) $tvdbId === self::CORRUPTED_SERIES_ID) {
+                continue;
+            }
             $unfollowed     = isset($isFollowed[$tvdbId]) ? !$isFollowed[$tvdbId] : false;
             $tvTimeArchived = $followed[$tvdbId]['archived'] ?? false;
+            $wantsForLater  = $forLater[$tvdbId] ?? false;
+            $everWatched    = $hasWatched[$tvdbId] ?? false;
+
+            // stopping something implies having started it - a show that
+            // would otherwise read as "stopped watching" (TV Time's own
+            // archived, or unfollowed-and-not-explicitly-for_later) but has
+            // zero watched episodes doesn't fit that meaning at all, so it
+            // becomes "watch later" instead, the same bucket a genuine
+            // for_later show with no watch history gets
+            $wouldStopWatching = $tvTimeArchived || ($unfollowed && !$wantsForLater);
+
             $shows[$tvdbId] = array(
-                'archived'   => false,
-                'removed'    => $unfollowed || $tvTimeArchived,
+                'archived'   => !$everWatched && ($wantsForLater || $wouldStopWatching),
+                'removed'    => $everWatched && $wouldStopWatching,
                 'created_at' => $followed[$tvdbId]['created_at'] ?? null,
             );
         }
@@ -239,8 +326,9 @@ final class Parser
      * @param array<int, array<int, string>> $watched
      * @param array<int, array<int, array{season: int, episode: int}>> $episodeNumbers
      * @param array<int, string> $showNames
+     * @param array<int, bool> $corruptedEpisodeIds see collectCorruptedEpisodeIds()
      */
-    private function mergeTrackingRecords(string $path, array &$watched, array &$episodeNumbers, array &$showNames): void
+    private function mergeTrackingRecords(string $path, array &$watched, array &$episodeNumbers, array &$showNames, array $corruptedEpisodeIds): void
     {
         foreach ($this->readCsv($path) as $row) {
             if (($row['type'] ?? '') !== 'watch' || ($row['entity_type'] ?? '') !== 'episode') {
@@ -248,7 +336,7 @@ final class Parser
             }
             $seriesId  = (int) ($row['series_id'] ?? 0);
             $episodeId = (int) ($row['episode_id'] ?? 0);
-            if ($seriesId === 0 || $episodeId === 0) {
+            if ($seriesId === 0 || $episodeId === 0 || isset($corruptedEpisodeIds[$episodeId])) {
                 continue;
             }
             $this->recordWatch($watched, $seriesId, $episodeId, $row['created_at'] ?? null);
@@ -261,8 +349,9 @@ final class Parser
      * @param array<int, array<int, string>> $watched
      * @param array<int, array<int, array{season: int, episode: int}>> $episodeNumbers
      * @param array<int, string> $showNames
+     * @param array<int, bool> $corruptedEpisodeIds see collectCorruptedEpisodeIds()
      */
-    private function mergeTrackingRecordsV2(string $path, array &$watched, array &$episodeNumbers, array &$showNames): void
+    private function mergeTrackingRecordsV2(string $path, array &$watched, array &$episodeNumbers, array &$showNames, array $corruptedEpisodeIds): void
     {
         foreach ($this->readCsv($path) as $row) {
             if (!str_starts_with($row['key'] ?? '', 'watch-episode-')) {
@@ -270,13 +359,39 @@ final class Parser
             }
             $seriesId  = (int) ($row['s_id'] ?? 0);
             $episodeId = (int) ($row['ep_id'] ?? 0);
-            if ($seriesId === 0 || $episodeId === 0) {
+            if ($seriesId === 0 || $episodeId === 0 || isset($corruptedEpisodeIds[$episodeId])) {
                 continue;
             }
             $this->recordWatch($watched, $seriesId, $episodeId, $row['created_at'] ?? null);
             $this->recordEpisodeNumber($episodeNumbers, $seriesId, $episodeId, $row['season_number'] ?? null, $row['episode_number'] ?? null);
             $this->recordShowName($showNames, $seriesId, $row['series_name'] ?? null);
         }
+    }
+
+    /**
+     * Scans both tracking files once for CORRUPTED_SERIES_ID's own rows -
+     * see that constant's own docblock - to build the set of episode_ids
+     * to drop wherever they appear, including under a different,
+     * real-looking series id (confirmed to happen: e.g. "The Mike Douglas
+     * Show"'s own real tvdb_id also carries an exact duplicate of the same
+     * bogus episode_id/created_at pair).
+     *
+     * @return array<int, bool> episode_id => true, for O(1) lookup
+     */
+    private function collectCorruptedEpisodeIds(string $trackingV1Path, string $trackingV2Path): array
+    {
+        $corrupted = array();
+        foreach ($this->readCsv($trackingV1Path) as $row) {
+            if (($row['series_id'] ?? '') === self::CORRUPTED_SERIES_ID && ($row['episode_id'] ?? '') !== '') {
+                $corrupted[(int) $row['episode_id']] = true;
+            }
+        }
+        foreach ($this->readCsv($trackingV2Path) as $row) {
+            if (($row['s_id'] ?? '') === self::CORRUPTED_SERIES_ID && ($row['ep_id'] ?? '') !== '') {
+                $corrupted[(int) $row['ep_id']] = true;
+            }
+        }
+        return $corrupted;
     }
 
     /**

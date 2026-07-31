@@ -138,8 +138,9 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     at all yet*. `premiere_in_days` (days until the earliest still-upcoming aired date, `null`
     otherwise) exists so a client can tell "coming soon" apart from "you're all caught up" instead
     of both looking identical (`next_episode: null`). Archived/removed shows (`user_serie_watchlist`'s
-    `archived`/`removed` flags - set automatically by the TV Time importer below, or toggled by hand
-    via the `archived`/`removed` endpoints above) never appear in either watchlist endpoint - the
+    `watch_later`/`stopped_watching` columns - `stopped_watching` set automatically by the TV Time
+    importer below, `watch_later` only ever toggled by hand, both also toggled by hand via the
+    `archived`/`removed` endpoints above) never appear in either watchlist endpoint - the
     rows stay in the database (watched-episode history included), just hidden from both lists. This
     is deliberately different from `DELETE /watchlist/{tvdbId}`, which actually deletes the
     `user_serie_watchlist` row.
@@ -189,16 +190,27 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     rewatched).
 
     A show `user_tv_show_data.csv`'s own `is_followed` marks as unfollowed, or
-    `followed_tv_show.csv`'s own `archived` column marks archived, sets `user_serie_watchlist.removed`
-    - even with real watch history. TV Time's own "archived" turned out to mean this app's own
-    "removed" ("deixades de veure"), not this app's own `archived` ("veure més tard"/watch later):
-    confirmed empirically against a real export that *every* TV-Time-archived show has at least one
-    watched episode (several in the hundreds), i.e. actively watched then stopped, not "haven't
-    started this yet". TV Time has no field that means "watch later" at all (an unstarted-but-still-
-    followed show already surfaces as this app's own "not started" section on its own, no flag
-    needed), so the importer never sets `.archived` - only the user does, by hand, afterward. Removed
-    shows are still imported, just hidden from both watchlist endpoints (see above) rather than
-    dropped, in case the app wants to surface them differently later.
+    `followed_tv_show.csv`'s own `archived` column marks archived, sets
+    `user_serie_watchlist.stopped_watching` - even with real watch history. TV Time's own "archived"
+    turned out to mean this app's own "stopped watching" ("deixades de veure"), not this app's own
+    `watch_later` ("veure més tard"): confirmed empirically against a real export that *every*
+    TV-Time-archived show has at least one watched episode (several in the hundreds), i.e. actively
+    watched then stopped, not "haven't started this yet". The genuine "watch later" signal instead
+    lives in `user_show_special_status.csv`'s own `status=for_later` rows - confirmed empirically
+    that 412/431 (95.6%) of a real export's `for_later` shows have zero watched episodes, unlike
+    `archived` above. `for_later` conflicts with `is_followed=0` unusually often (235/431), almost
+    always (230/235) for a show with zero watch history too - not a real "stopped watching", just a
+    show TV Time never actually tracked as followed despite the user wanting to watch it later - so
+    `for_later` wins over the unfollowed-implies-`stopped_watching` rule *unless* the show also has
+    real watch history, in which case `stopped_watching` still wins (and if TV Time's own `archived`
+    is set too - never observed to co-occur with `for_later` in practice - that wins over both). A
+    show the user has already watched through to its last aired regular episode - by real per-episode
+    import data, not TheTVDB's own unrelated `status` field - never comes out of import as either
+    flag, via `Watchlist::hasWatchedLastEpisode()`, applied by the importer right after marking that
+    show's watched episodes (same "watching something is the opposite of deferring/having stopped"
+    reasoning the app's own Watch/Rewatch endpoints already apply outside import). Shows marked
+    `stopped_watching` are still imported, just hidden from both watchlist endpoints (see above)
+    rather than dropped, in case the app wants to surface them differently later.
 
     The same import also recreates the account's own custom lists (see below) from the export's
     `lists-prod-lists.csv`, once every show above has finished syncing (lists are the far smaller,
