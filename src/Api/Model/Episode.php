@@ -34,14 +34,25 @@ class Episode extends Model
 
     /**
      * returns the local mirror rows for the series' episodes, fetching/
-     * upserting them from TheTVDB first if missing or stale
+     * upserting them from TheTVDB first if missing or stale. Also
+     * reconciles removals: TheTVDB corrects itself over time (a duplicate
+     * episode gets merged, a season gets renumbered, ...), and this app
+     * should follow suit rather than keeping "ghost" episodes around
+     * forever - see removeStale()
      */
     public function syncForSeries(int $idSerie, int $tvdbSeriesId, Client $client): array
     {
         if ($this->isStale($idSerie)) {
             $episodes = $client->getSeriesEpisodes($tvdbSeriesId);
-            foreach ($episodes as $episode) {
-                $this->upsert($idSerie, $episode);
+            // an empty response is indistinguishable from "TheTVDB is
+            // unreachable right now" (see Client::request()) - never treat
+            // that as "this series really has zero episodes now" and wipe
+            // everything; only reconcile against a genuine, non-empty list
+            if (!empty($episodes)) {
+                foreach ($episodes as $episode) {
+                    $this->upsert($idSerie, $episode);
+                }
+                $this->removeStale($idSerie, array_column($episodes, 'id'));
             }
         }
 
@@ -55,6 +66,52 @@ class Episode extends Model
             'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
         );
         return $this->mysql->query($sql, $params);
+    }
+
+    /**
+     * deletes every local episode row for $idSerie whose tvdb_id isn't in
+     * $currentTvdbIds (the fresh, complete list TheTVDB just returned),
+     * along with any user's watch history for them - there's no undo, but
+     * an episode TheTVDB no longer lists isn't one this app should keep
+     * pretending exists
+     *
+     * @param int[] $currentTvdbIds
+     */
+    private function removeStale(int $idSerie, array $currentTvdbIds): void
+    {
+        $params       = array('id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT));
+        $placeholders = array();
+        foreach (array_values($currentTvdbIds) as $index => $tvdbId) {
+            $key            = 'tvdb_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key]   = array('value' => $tvdbId, 'type' => PDO::PARAM_INT);
+        }
+
+        $sql  = '
+            SELECT id_episode
+            FROM episode
+            WHERE id_serie = :id_serie AND tvdb_id NOT IN (' . implode(',', $placeholders) . ')
+        ';
+        $rows = $this->mysql->query($sql, $params);
+        if (empty($rows)) {
+            return;
+        }
+
+        $staleIds = array_column($rows, 'id_episode');
+        (new WatchedEpisode())->removeForEpisodes($staleIds);
+
+        $params       = array();
+        $placeholders = array();
+        foreach (array_values($staleIds) as $index => $idEpisode) {
+            $key            = 'id_episode_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key]   = array('value' => $idEpisode, 'type' => PDO::PARAM_INT);
+        }
+        $sql = '
+            DELETE FROM episode
+            WHERE id_episode IN (' . implode(',', $placeholders) . ')
+        ';
+        $this->mysql->query($sql, $params);
     }
 
     private function isStale(int $idSerie): bool

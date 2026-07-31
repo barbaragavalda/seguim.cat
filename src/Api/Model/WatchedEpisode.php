@@ -188,6 +188,36 @@ class WatchedEpisode extends Model
     }
 
     /**
+     * called by Episode::removeStale() when TheTVDB no longer returns
+     * episodes that were previously mirrored locally (removed, merged, or
+     * renumbered upstream) - every user's watch history for them is wiped
+     * along with the episode rows themselves, across every user at once,
+     * not just one
+     *
+     * @param int[] $idEpisodes
+     */
+    public function removeForEpisodes(array $idEpisodes): void
+    {
+        if (empty($idEpisodes)) {
+            return;
+        }
+
+        $params       = array();
+        $placeholders = array();
+        foreach (array_values($idEpisodes) as $index => $idEpisode) {
+            $key            = 'id_episode_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key]   = array('value' => $idEpisode, 'type' => PDO::PARAM_INT);
+        }
+
+        $sql = '
+            DELETE FROM user_episode_watched
+            WHERE id_episode IN (' . implode(',', $placeholders) . ')
+        ';
+        $this->mysql->query($sql, $params);
+    }
+
+    /**
      * @return int[] distinct ids (episode.id_episode) of the user's watched episodes within $idSerie -
      *               DISTINCT because a rewatched episode now has more than one row
      */

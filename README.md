@@ -105,6 +105,15 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     resolved, see below) picks which language a given response actually returns, falling back to
     TheTVDB's own `default_name`/`default_overview` when that language has no translation.
 
+    Every 24h refresh also reconciles removals, not just additions/changes: TheTVDB corrects
+    itself over time (a duplicate episode gets merged, a season gets renumbered...), and
+    `Episode::syncForSeries()` deletes any locally-mirrored episode that TheTVDB's fresh, complete
+    list no longer includes - along with every user's `user_episode_watched` rows for it, since
+    there's no reason to keep watch history for an episode that no longer exists. This only runs
+    against a genuine non-empty response - an empty one is indistinguishable from TheTVDB being
+    temporarily unreachable (see `Api\Model\TheTvdb\Client::request()`), so it's never treated as
+    "this series now has zero episodes" and never wipes everything out over a transient failure.
+
     Both watchlist endpoints return, per series: the translated `name`/`overview` (same fallback as
     above), `image` (the series' background/fanart - the poster is dropped here, unlike
     `series/{tvdbId}` which returns both), `next_episode` (the next unwatched episode as
