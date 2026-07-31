@@ -169,20 +169,25 @@ final class Parser
      * export: 171 shows user_tv_show_data.csv's own `is_followed` still
      * marks as followed (82 of them with real watch history, e.g. "Widow's
      * Bay") are missing from followed_tv_show.csv entirely, and 285 it
-     * marks `is_followed=0` (unfollowed/"deixada de veure" in TV Time) are
-     * still sitting in followed_tv_show.csv looking active. Relying on
-     * followed_tv_show.csv alone (the old behavior) got both directions
-     * wrong: a still-followed show with no row there fell through to the
-     * "watched but absent -> removed" fallback below (or, if it had no
-     * watch history either, was never imported at all), while an unfollowed
-     * show that still had a followed_tv_show.csv row was hardcoded to
-     * `removed = false` regardless of anything else. `is_followed` is the
-     * one TV Time itself would show as "still following" today, so it now
-     * decides `removed`; followed_tv_show.csv only still supplies
-     * `archived`/`created_at` when it happens to have a row for the id (a
-     * handful of very old follows don't appear in user_tv_show_data.csv at
-     * all - those keep the old followed_tv_show.csv-only behavior via the
-     * `?? false` fallback below).
+     * marks `is_followed=0` (unfollowed) are still sitting in
+     * followed_tv_show.csv looking active. `is_followed` is the one TV
+     * Time itself would show as "still following" today, so it decides
+     * `removed` here, not presence in followed_tv_show.csv.
+     *
+     * followed_tv_show.csv's own `archived` column turned out to mean
+     * something else entirely than this app's `archived` ("veure més
+     * tard"/watch later) - confirmed empirically against the same real
+     * export: of the 98 shows TV Time marks archived there, *every single
+     * one* has at least one watched episode (some in the hundreds - e.g.
+     * "Polònia" 378, "The Voice" 365, "The Walking Dead" 156), and all 98
+     * are still `is_followed=1`. That's not "haven't started this yet,
+     * deliberately deferred" (this app's own `archived`) - it's "was
+     * actively watching this, stopped, but never formally unfollowed it" -
+     * exactly this app's own `removed` ("deixades de veure"). TV Time has
+     * no export field that means "watch later" at all (an unstarted-but-
+     * still-followed show already surfaces as this app's own "not started"
+     * section without needing any flag for it), so `archived` is never set
+     * by the importer - only ever by the user, by hand, afterward.
      *
      * @return array{0: array<int, array{archived: bool, removed: bool, created_at: ?string}>, 1: array<string, int>}
      */
@@ -218,9 +223,11 @@ final class Parser
 
         $shows = array();
         foreach (array_unique(array_merge(array_keys($followed), array_keys($isFollowed))) as $tvdbId) {
+            $unfollowed     = isset($isFollowed[$tvdbId]) ? !$isFollowed[$tvdbId] : false;
+            $tvTimeArchived = $followed[$tvdbId]['archived'] ?? false;
             $shows[$tvdbId] = array(
-                'archived'   => $followed[$tvdbId]['archived'] ?? false,
-                'removed'    => isset($isFollowed[$tvdbId]) ? !$isFollowed[$tvdbId] : false,
+                'archived'   => false,
+                'removed'    => $unfollowed || $tvTimeArchived,
                 'created_at' => $followed[$tvdbId]['created_at'] ?? null,
             );
         }
