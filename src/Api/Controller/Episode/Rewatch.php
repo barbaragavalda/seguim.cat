@@ -27,8 +27,13 @@ class Rewatch extends Controller
             return;
         }
 
-        // same reasoning as Watch - a rewatch implies following the series
-        (new Watchlist())->add($this->user->getID(), $episode->getInfo()['id_serie']);
+        $watchlist = new Watchlist();
+        $idSerie   = $episode->getInfo()['id_serie'];
+
+        // same reasoning as Watch - a rewatch implies following the series,
+        // and just as much "veure més tard" (archived)'s own opposite
+        $watchlist->add($this->user->getID(), $idSerie);
+        $watchlist->setArchived($this->user->getID(), $idSerie, false);
 
         (new WatchedEpisode())->markRewatched($this->user->getID(), $episode->getInfo()['id_episode']);
     }

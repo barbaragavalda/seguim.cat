@@ -218,6 +218,27 @@ class WatchedEpisode extends Model
     }
 
     /**
+     * whether the user has ever watched (or rewatched) anything from
+     * $idSerie at all - Api\Controller\Watchlist\Remove's own gate on the
+     * hard-delete action, see that class' own docblock on why
+     */
+    public function hasAnyWatched(int $idUser, int $idSerie): bool
+    {
+        $sql    = '
+            SELECT 1
+            FROM user_episode_watched w
+            INNER JOIN episode e ON e.id_episode = w.id_episode
+            WHERE w.id_user = :id_user AND e.id_serie = :id_serie
+            LIMIT 1
+        ';
+        $params = array(
+            'id_user'  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+        );
+        return isset($this->mysql->query($sql, $params)[0]);
+    }
+
+    /**
      * @return int[] distinct ids (episode.id_episode) of the user's watched episodes within $idSerie -
      *               DISTINCT because a rewatched episode now has more than one row
      */
