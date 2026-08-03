@@ -78,10 +78,17 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
     | POST   | `/api/import/tvtime`        | Upload a TV Time GDPR data export (`multipart/form-data`, field `file`), queues an import job |
     | GET    | `/api/import/tvtime/{id}`   | Poll an import job's status/summary                    |
     | POST   | `/api/import/tvtime/process` | Works through one batch of the oldest queued import job - see below |
+    | GET    | `/api/version`              | The deployed build's version (reads the repo's own `VERSION` file) |
 
     Every request needs an `Authorization` header: the app's own shared secret
-    (`config/api/{dev,prod}/webservice.php`) on `register`/`login`/`import/tvtime/process`, the
-    user's own token (returned by `register`/`login`) on everything else.
+    (`config/api/{dev,prod}/webservice.php`) on `register`/`login`/`import/tvtime/process`/`version`,
+    the user's own token (returned by `register`/`login`) on everything else.
+
+    `VERSION` (repo root) follows semver and is bumped automatically on every push to `master` -
+    `.github/workflows/bump-version.yml` increments the patch number unless the push itself already
+    changed `VERSION`, which is taken as a human deliberately setting a major/minor bump (or
+    resetting patch to 0) - the workflow leaves that value alone rather than adding one more patch
+    on top of it.
 
     `user_episode_watched` holds one row per *watch event*, not one per episode - rewatching adds
     another row rather than updating an existing one, so both the total count and each event's own
