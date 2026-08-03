@@ -169,34 +169,47 @@ class Client
     }
 
     /**
-     * only fetches page 0 - a single regular series' episode list fits
-     * comfortably in one TVDB page; full pagination is out of scope
+     * follows every page - a single TVDB page tops out at 500 episodes,
+     * which a long-running weekly/daily show (confirmed for real: "APM?"
+     * 22 seasons, "30 minuts" 42 seasons) genuinely exceeds, silently
+     * truncating the higher seasons when only page 0 was ever fetched (the
+     * previous version of this method). Most shows still only need the one
+     * request - this only pages further when TheTVDB's own `links.next`
+     * says there's more.
      */
     public function getSeriesEpisodes(int $tvdbSeriesId, string $seasonType = 'official'): array
     {
-        $response = $this->request(
-            'GET',
-            '/series/' . $tvdbSeriesId . '/episodes/' . $seasonType,
-            array('page' => 0)
-        );
-        return $response['data']['episodes'] ?? array();
+        return $this->getAllEpisodePages('/series/' . $tvdbSeriesId . '/episodes/' . $seasonType);
     }
 
     /**
      * unlike getSeriesTranslation() (one series-level record), this returns
      * *every* episode of the series translated into $tvdbLanguageCode in a
-     * single call - confirmed empirically (149 episodes back for a 149-
+     * single page - confirmed empirically (149 episodes back for a 149-
      * episode series, same as the untranslated getSeriesEpisodes() call),
-     * so no need to fetch translations per-episode
+     * so no need to fetch translations per-episode. Still paginated the
+     * same way as getSeriesEpisodes() above for the same reason.
      */
     public function getSeriesEpisodesTranslated(int $tvdbSeriesId, string $tvdbLanguageCode, string $seasonType = 'official'): array
     {
-        $response = $this->request(
-            'GET',
-            '/series/' . $tvdbSeriesId . '/episodes/' . $seasonType . '/' . $tvdbLanguageCode,
-            array('page' => 0)
-        );
-        return $response['data']['episodes'] ?? array();
+        return $this->getAllEpisodePages('/series/' . $tvdbSeriesId . '/episodes/' . $seasonType . '/' . $tvdbLanguageCode);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function getAllEpisodePages(string $path): array
+    {
+        $episodes = array();
+        $page     = 0;
+        do {
+            $response = $this->request('GET', $path, array('page' => $page));
+            $episodes = array_merge($episodes, $response['data']['episodes'] ?? array());
+            $hasNext  = ($response['links']['next'] ?? null) !== null;
+            $page++;
+        } while ($hasNext);
+
+        return $episodes;
     }
 
     /**
