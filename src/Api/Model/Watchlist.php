@@ -25,30 +25,37 @@ class Watchlist extends Model
 
     /**
      * used only by the TV Time importer (Api\Model\TvTimeImport\Processor) -
-     * an upsert rather than add()'s INSERT IGNORE, so re-running an import
-     * (or importing after the show was already added normally) still
-     * updates the watch_later/stopped_watching flags rather than silently
-     * keeping whatever was there before. $createdAt preserves TV Time's own
-     * follow date (falls back to "now" when the export has none - see
-     * Parser::parse()'s "removed" shows) so listNotStarted()'s "most
-     * recently added" ordering stays meaningful for imported shows instead
-     * of every one of them tying for the import's own timestamp
+     * an upsert rather than add()'s INSERT IGNORE so a show already in the
+     * watchlist still gets synced/kept up to date, but watch_later/
+     * stopped_watching are deliberately only ever set on the *first* insert,
+     * never touched again on a later conflict. A previous version of this
+     * method re-set them unconditionally on every call, meaning simply
+     * re-running an import (e.g. to pick up newly-recoverable episodes -
+     * see Api\Model\TheTvdb\Client::getAllEpisodePages()) silently reset
+     * every manual watch_later/stopped_watching choice the user had made by
+     * hand since the previous import back to whatever the export itself
+     * says - confirmed to happen for real (3 of 5 manually-set "veure més
+     * tard" shows lost that flag on a reconciliation re-import before this
+     * was caught). $createdAt preserves TV Time's own follow date (falls
+     * back to "now" when the export has none - see Parser::parse()'s
+     * "removed" shows) so listNotStarted()'s "most recently added" ordering
+     * stays meaningful for imported shows instead of every one of them
+     * tying for the import's own timestamp - also only ever set on insert,
+     * same reasoning.
      */
     public function addFromImport(int $idUser, int $idSerie, bool $archived, bool $removed, ?string $createdAt = null): void
     {
         $sql    = '
             INSERT INTO user_serie_watchlist (id_user, id_serie, watch_later, stopped_watching, created)
             VALUES (:id_user, :id_serie, :watch_later, :stopped_watching, :created)
-            ON DUPLICATE KEY UPDATE watch_later = :watch_later_upd, stopped_watching = :stopped_watching_upd
+            ON DUPLICATE KEY UPDATE id_serie = id_serie
         ';
         $params = array(
-            'id_user'              => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_serie'             => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
-            'watch_later'          => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
-            'watch_later_upd'      => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
-            'stopped_watching'     => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
-            'stopped_watching_upd' => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
-            'created'              => array('value' => $createdAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
+            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
+            'id_serie'         => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
+            'watch_later'      => array('value' => (int) $archived, 'type' => PDO::PARAM_INT),
+            'stopped_watching' => array('value' => (int) $removed, 'type' => PDO::PARAM_INT),
+            'created'          => array('value' => $createdAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
         );
         $this->mysql->query($sql, $params);
     }
@@ -476,6 +483,10 @@ class Watchlist extends Model
             $row['next_episode_name']   = $next !== null
                 ? ($next['name'] ?: $next['default_name'])
                 : null;
+            // lets the watchlist row mark this one specific episode watched
+            // directly (same endpoint the series detail screen's own
+            // episode rows already use), without a second lookup
+            $row['next_episode_tvdb_id'] = $next['tvdb_id'] ?? null;
             $row['remaining_episodes']  = count($remaining);
 
             // only reachable for a "not started" series (listWatching()
@@ -504,12 +515,12 @@ class Watchlist extends Model
      * sound way to count only the specials that matter. Episodes not yet
      * aired are excluded too - nothing to "watch" yet.
      *
-     * @return array<int, array{season_number: int, episode_number: int, name: ?string, default_name: ?string}>
+     * @return array<int, array{season_number: int, episode_number: int, name: ?string, default_name: ?string, tvdb_id: int}>
      */
     private function remainingEpisodes(int $idUser, int $idSerie, int $idAppacmanLang): array
     {
         $sql    = '
-            SELECT e.season_number, e.episode_number, e.default_name, el.name
+            SELECT e.season_number, e.episode_number, e.default_name, el.name, e.tvdb_id
             FROM episode e
             LEFT JOIN user_episode_watched w ON w.id_episode = e.id_episode AND w.id_user = :id_user
             LEFT JOIN episode_lang el ON el.id_episode = e.id_episode AND el.id_appacman_lang = :id_appacman_lang
