@@ -5,30 +5,30 @@ namespace Api\Controller\Import;
 use Api\Controller\Controller;
 use Api\Model\TheTvdb\Client;
 use Api\Model\TvTimeImport;
-use Api\Model\TvTimeImport\Parser;
-use Api\Model\TvTimeImport\Processor;
+use Api\Model\TvTimeImport\JobRunner;
 use Core\Controller\CacheManager;
 use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
-use RuntimeException;
-use Throwable;
-use ZipArchive;
 
 /**
- * Meant to be pinged periodically by a system cron (this framework has no
+ * A backstop, not the primary driver - Api\Controller\Import\TvTimeStatus
+ * (the Flutter app's own poll loop, already running every few seconds while
+ * the import screen is open) advances a job itself, tick by tick, with no
+ * external infrastructure needed. This endpoint only matters for a job
+ * whose owner closed the app (or lost connectivity) before it finished -
+ * meant to be pinged occasionally by a system cron (this framework has no
  * queue/worker infra - see freimguork-core's Cronjob sub-project convention
  * for the same "background work via an HTTP-triggered endpoint" pattern).
+ * In production this is Cdmon's own "visit a URL on a schedule" cron
+ * feature - GET only, no custom headers - hence both accepting GET (not
+ * just POST) and checkToken()'s own override below.
  *
- * Processes one time-boxed batch of the oldest not-yet-finished job per
- * call (see Processor::TIME_BUDGET_SECONDS) rather than the whole thing at
- * once - confirmed empirically that a real ~970-show import outlasts
- * Apache's own 60s reverse-proxy timeout well before finishing. The zip is
- * re-extracted and the CSVs re-parsed on every call (cheap - local file
- * reads, no network - unlike the TheTVDB sync itself); only which shows are
- * already done (Api\Model\TvTimeImport::processed_show_ids) is persisted
- * between calls.
+ * Processes one time-boxed batch of the globally oldest not-yet-finished
+ * job per call (see Processor::TIME_BUDGET_SECONDS) rather than the whole
+ * thing at once - confirmed empirically that a real ~970-show import
+ * outlasts Apache's own 60s reverse-proxy timeout well before finishing.
  */
-#[Route('/import/tvtime/process', methods: ['POST'], name: 'api.import.tvtime.process')]
+#[Route('/import/tvtime/process', methods: ['GET', 'POST'], name: 'api.import.tvtime.process')]
 class TvTimeProcess extends Controller
 {
 
@@ -44,6 +44,25 @@ class TvTimeProcess extends Controller
         return false;
     }
 
+    /**
+     * WebserviceController::checkToken() only ever reads the shared secret
+     * from the Authorization header, which a bare "visit this URL" cron
+     * (Cdmon's own scheduler) can't send. Accept it as a `?token=` query
+     * parameter too, just for this one cron-triggered action - reusing the
+     * app's existing default_token rather than a dedicated cron secret,
+     * since default_token is already shipped inside the published Flutter
+     * app itself and isn't a tightly-held value to begin with.
+     */
+    protected function checkToken(): bool|int
+    {
+        $webserviceConfig = $this->config->get('webservice');
+        $defaultToken      = $webserviceConfig['default_token'] ?? null;
+        if ($defaultToken !== null && ($_GET['token'] ?? null) === $defaultToken) {
+            return false;
+        }
+        return parent::checkToken();
+    }
+
     protected function run(): void
     {
         $importModel = new TvTimeImport();
@@ -53,85 +72,12 @@ class TvTimeProcess extends Controller
             return;
         }
 
-        $id = (int) $job['id_tvtime_import'];
-        if ($job['status'] === 'pending') {
-            $importModel->markProcessing($id);
-        }
-
-        $extractDir = null;
-        try {
-            $extractDir        = $this->extract($job['zip_path'], $id);
-            $parsed            = (new Parser())->parse($extractDir);
-            $alreadyDoneShows  = $importModel->getProcessedShowIds($job);
-            $alreadyDoneLists  = $importModel->getProcessedListKeys($job);
-            $alreadyDoneMovies = $importModel->getProcessedMovieKeys($job);
-            $batch             = (new Processor($this->client))
-                ->processBatch((int) $job['id_user'], $id, $parsed, $alreadyDoneShows, $alreadyDoneLists, $alreadyDoneMovies);
-
-            $importModel->recordBatch($id, $batch['done_show_ids'], $batch['done_list_keys'], $batch['done_movie_keys'], array(
-                'shows_synced'       => $batch['shows_synced'],
-                'shows_failed'       => $batch['shows_failed'],
-                'shows_pending'      => $batch['shows_pending'],
-                'episodes_watched'   => $batch['episodes_watched'],
-                'episodes_rewatched' => $batch['episodes_rewatched'],
-                'lists_created'      => $batch['lists_created'],
-                'list_series_added'  => $batch['list_series_added'],
-                'list_movies_added'  => $batch['list_movies_added'],
-                'list_series_pending' => $batch['list_series_pending'],
-                'list_movies_pending' => $batch['list_movies_pending'],
-                'movies_synced'      => $batch['movies_synced'],
-                'movies_unmatched'   => $batch['movies_unmatched'],
-                'movies_pending'     => $batch['movies_pending'],
-                'movies_watched'     => $batch['movies_watched'],
-                'movies_rewatched'   => $batch['movies_rewatched'],
-            ));
-
-            if ($batch['finished']) {
-                $importModel->markDone($id);
-                @unlink($job['zip_path']);
-            }
-
-            $this->assign('finished', $batch['finished']);
-        } catch (Throwable $e) {
-            $importModel->markFailed($id, $e->getMessage());
-            @unlink($job['zip_path']);
-        } finally {
-            $this->removeExtractedFiles($extractDir);
-        }
+        $id       = (int) $job['id_tvtime_import'];
+        $finished = (new JobRunner($this->client))->processOneBatch($job);
 
         $this->assign('processed', true);
+        $this->assign('finished', $finished);
         $this->assign('id', $id);
-    }
-
-    private function extract(string $zipPath, int $jobId): string
-    {
-        $dir = dirname($zipPath) . '/' . $jobId;
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0777, true);
-        }
-
-        $zip = new ZipArchive();
-        if ($zip->open($zipPath) !== true) {
-            throw new RuntimeException('Could not open the uploaded zip.');
-        }
-        $zip->extractTo($dir);
-        $zip->close();
-
-        return $dir;
-    }
-
-    // only the extracted CSVs, re-created fresh every call - the zip
-    // itself is kept until the job actually finishes (or fails), since it's
-    // needed again on the next batch
-    private function removeExtractedFiles(?string $dir): void
-    {
-        if ($dir === null || !is_dir($dir)) {
-            return;
-        }
-        foreach (glob($dir . '/*') ?: array() as $file) {
-            @unlink($file);
-        }
-        @rmdir($dir);
     }
 
 }

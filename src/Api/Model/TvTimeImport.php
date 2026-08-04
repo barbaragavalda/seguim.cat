@@ -82,6 +82,65 @@ class TvTimeImport extends Model
     }
 
     /**
+     * this user's own latest not-yet-finished job, if any - lets the
+     * Flutter app recover from having no idea an import is still running:
+     * its own in-memory state (TvTimeImportController) doesn't survive the
+     * app process restarting (e.g. the phone killing a backgrounded app),
+     * so it can ask on its own instead of needing a remembered job id (see
+     * Api\Controller\Import\TvTimeCurrent)
+     */
+    public function findLatestInProgressForUser(int $idUser): ?array
+    {
+        $sql    = '
+            SELECT *
+            FROM tvtime_import
+            WHERE id_user = :id_user AND status IN ("pending", "processing")
+            ORDER BY created DESC
+            LIMIT 1
+        ';
+        $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
+        $rows   = $this->mysql->query($sql, $params);
+
+        return $rows[0] ?? null;
+    }
+
+    /**
+     * Advisory lock scoped to one job, so at most one request is ever
+     * inside JobRunner::processOneBatch() for it at a time - more than one
+     * client can legitimately try to advance the very same job
+     * concurrently (the same import open in more than one tab/device, each
+     * independently resuming it - see Api\Controller\Import\TvTimeCurrent -
+     * or a poll racing the cron backstop). Without this, two overlapping
+     * calls both read the same not-yet-updated "already done" snapshot and
+     * redo the same shows - recordBatch()'s summary counts are summed, not
+     * deduped like processed_show_ids is, so this silently double-counts
+     * (confirmed live: shows_synced ended up higher than shows_total).
+     * MySQL auto-releases a named lock when the acquiring connection
+     * closes (end of this PHP request), so a crashed/killed request can't
+     * leave a job stuck locked forever - no manual cleanup path needed.
+     */
+    public function acquireProcessingLock(int $id): bool
+    {
+        $sql    = 'SELECT GET_LOCK(:name, 0) AS acquired';
+        $params = array('name' => array('value' => $this->lockName($id), 'type' => PDO::PARAM_STR));
+        $rows   = $this->mysql->query($sql, $params);
+
+        return (int) ($rows[0]['acquired'] ?? 0) === 1;
+    }
+
+    public function releaseProcessingLock(int $id): void
+    {
+        $sql    = 'SELECT RELEASE_LOCK(:name)';
+        $params = array('name' => array('value' => $this->lockName($id), 'type' => PDO::PARAM_STR));
+        $this->mysql->query($sql, $params);
+    }
+
+    private function lockName(int $id): string
+    {
+        return 'tvtime_import_' . $id;
+    }
+
+    /**
      * the single oldest job that isn't finished yet (pending OR already
      * processing - a job stays 'processing' across every batch until
      * nothing's left, see Api\Controller\Import\TvTimeProcess), so a
@@ -148,8 +207,13 @@ class TvTimeImport extends Model
      * @param array{
      *     shows_synced: int, shows_failed: array<int>, shows_pending: int, episodes_watched: int, episodes_rewatched: int,
      *     lists_created: int, list_series_added: int, list_movies_added: int, movies_synced: int, movies_unmatched: array<string>,
-     *     movies_pending: int, movies_watched: int, movies_rewatched: int
-     * } $summaryDelta
+     *     movies_pending: int, movies_watched: int, movies_rewatched: int,
+     *     shows_total: int, movies_total: int
+     * } $summaryDelta shows_total/movies_total are the export's fixed
+     *   totals (from re-parsing the same zip - same numbers every batch),
+     *   not deltas - set directly rather than accumulated, unlike every
+     *   other key here. Lets the client show a real (not fake/estimated)
+     *   progress fraction - see Api\Model\TvTimeImport\JobRunner.
      */
     public function recordBatch(int $id, array $newDoneShowIds, array $newDoneListKeys, array $newDoneMovieKeys, array $summaryDelta): void
     {
@@ -173,8 +237,11 @@ class TvTimeImport extends Model
                 'list_series_pending' => 0, 'list_movies_pending' => 0,
                 'movies_synced' => 0, 'movies_unmatched' => array(),
                 'movies_pending' => 0, 'movies_watched' => 0, 'movies_rewatched' => 0,
+                'shows_total' => 0, 'movies_total' => 0,
             );
         $mergedSummary = array(
+            'shows_total'          => $summaryDelta['shows_total'],
+            'movies_total'         => $summaryDelta['movies_total'],
             'shows_synced'         => $summary['shows_synced'] + $summaryDelta['shows_synced'],
             'shows_failed'         => array_values(array_unique(array_merge($summary['shows_failed'], $summaryDelta['shows_failed']))),
             'shows_pending'        => ($summary['shows_pending'] ?? 0) + $summaryDelta['shows_pending'],

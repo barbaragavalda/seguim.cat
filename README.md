@@ -188,13 +188,18 @@ shut down. Built on `freimguork-core` + `freimguork-appacman` (admin panel) +
 
     Syncing a full history (frequently 900+ shows) reliably outlasts Apache's own 60s reverse-proxy
     timeout - confirmed against a real export - so `POST /import/tvtime` only stores the upload and
-    queues a job; `POST /import/tvtime/process` (meant to be pinged repeatedly by a system cron -
-    this framework has no queue/worker infra, same pattern as `freimguork-core`'s `Cronjob`
-    sub-project convention) works through one ~45s batch of the oldest queued/in-progress job per
-    call, persisting which shows are already done (`tvtime_import.processed_show_ids`) so the next
-    call resumes rather than restarting. `GET /import/tvtime/{id}` polls a job's `status`
-    (`pending`/`processing`/`done`/`failed`) and `summary` (shows synced/failed, episodes watched/
-    rewatched).
+    queues a job; the actual work happens in `Api\Model\TvTimeImport\JobRunner::processOneBatch()`
+    (extract/parse/process/record, ~45s time-boxed per call), shared by two triggers. The primary
+    one is `GET /import/tvtime/{id}` itself - the Flutter app already polls this every few seconds
+    while the import screen is open (`TvTimeImportController._poll()`), so each poll both advances
+    the job by one batch *and* reports its (now fresher) `status`/`summary` - no external
+    infrastructure needed for the common case. `POST|GET /import/tvtime/process` is only a backstop
+    for a job whose owner closed the app before it finished, meant to be pinged occasionally by a
+    system cron (this framework has no queue/worker infra, same pattern as `freimguork-core`'s
+    `Cronjob` sub-project convention) - unlike the status endpoint, it works through whichever job
+    is globally oldest, not a specific user's own. Persisting which shows are already done
+    (`tvtime_import.processed_show_ids`) is what lets either trigger resume a job rather than
+    restarting it.
 
     A show `user_tv_show_data.csv`'s own `is_followed` marks as unfollowed, or
     `followed_tv_show.csv`'s own `archived` column marks archived, sets
@@ -343,10 +348,12 @@ assign (usually `1` for the first user).
   (routes - `Account/{Get,UpdateUsername,ChangePassword,UpdateEmail,ConfirmEmailChange,
   UpdateLanguage,Delete}.php` are the profile-editing endpoints, `Delete.php` also overriding
   `freimguork-webservice`'s own `DELETE /account` (see above); `Import/{TvTime,TvTimeStatus,
-  TvTimeProcess}.php` are the TV Time importer's upload/poll/cron-tick endpoints, see above),
+  TvTimeProcess}.php` are the TV Time importer's upload/poll-and-advance/cron-backstop endpoints,
+  see above),
   `Model/{Series,SerieLang,Episode,EpisodeLang,Watchlist,WatchedEpisode,TvTimeImport}.php` (local
-  mirror + user state + import job tracking), `Model/TvTimeImport/{Parser,Processor}.php` (export
-  parsing + applying a batch to a real account), `Model/TheTvdb/{Client,Languages}.php` (TheTVDB v4
+  mirror + user state + import job tracking), `Model/TvTimeImport/{Parser,Processor,JobRunner}.php`
+  (export parsing + applying a batch to a real account + the shared per-batch lifecycle both
+  triggers call), `Model/TheTvdb/{Client,Languages}.php` (TheTVDB v4
   HTTP client - does its own plain `curl_init()` call rather than `Core\Model\Utils\Curl`, which
   forces every request through a bogus local proxy in dev mode and breaks real third-party calls;
   `Languages` maps this project's own `id_appacman_lang` to TheTVDB's 3-letter language codes,
@@ -367,5 +374,7 @@ assign (usually `1` for the first user).
 - Rate-limiting on login/register (password reset/forgot-password is done, see above)
 - Composer plugin conversion (`AssetPublisher` is still a script wired by hand in `composer.json`)
 - Automated tests / CI
-- `Cronjob`/`Import` sub-projects (add them to `config/projects.php` if ever needed, following the
-  same pattern as `wallaby`/`{lang}`)
+- Actually scheduling `GET /import/tvtime/process` in production - the endpoint itself is ready
+  (accepts GET with `?token=`, see its own docblock) and needs no dedicated `Cronjob` sub-project,
+  but nothing yet calls it on a schedule; on Cdmon (FTP-only, no shell/crontab access) that means
+  configuring their own "visit a URL periodically" panel feature
