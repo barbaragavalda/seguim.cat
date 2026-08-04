@@ -51,7 +51,16 @@ class TvTime extends Controller
             return;
         }
 
-        $id = (new TvTimeImport())->create($this->user->getID(), $path);
+        $importModel = new TvTimeImport();
+        // a fresh import means starting clean - any previous job of this
+        // user's (done, failed, or abandoned mid-way), its zip, and
+        // whatever it left pending for manual resolution would otherwise
+        // just keep piling up (see removeAllForUser()'s own docblock).
+        // Doesn't touch the user's actual watch history from a previous
+        // import - only this job-tracking bookkeeping.
+        $importModel->removeAllForUser($this->user->getID());
+
+        $id = $importModel->create($this->user->getID(), $path);
         $this->assign('id', $id);
         $this->assign('status', 'pending');
     }

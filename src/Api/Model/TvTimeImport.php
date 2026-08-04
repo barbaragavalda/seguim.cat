@@ -32,9 +32,19 @@ class TvTimeImport extends Model
     }
 
     /**
-     * called from Api\Controller\Account\Delete - a job's zip/extracted
-     * files would otherwise be left orphaned on disk once the account (and
-     * this row) is gone
+     * Called from Api\Controller\Account\Delete (a job's zip/extracted
+     * files would otherwise be left orphaned on disk once the account is
+     * gone) and from Api\Controller\Import\TvTime, right before starting a
+     * fresh import - without this, an old job (done, failed, or abandoned
+     * mid-way) and whatever it left behind (movie_import_pending/
+     * series_import_pending rows tied to it, tagged rewatch rows via
+     * WatchedEpisode::syncRewatchesFromImport()) just piles up: confirmed
+     * live this session, repeatedly, as stray pending-resolution rows
+     * surviving a manual cleanup that only touched tvtime_import itself.
+     * Deliberately doesn't touch user_serie_watchlist/user_episode_watched/
+     * user_movie_watchlist/user_movie_watched/user_list - those are the
+     * user's real, earned watch history from a *previous* import, not this
+     * job-tracking bookkeeping, and must survive a fresh re-import.
      */
     public function removeAllForUser(int $idUser): void
     {
@@ -46,6 +56,10 @@ class TvTimeImport extends Model
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
         $jobs   = $this->mysql->query($sql, $params);
 
+        if (empty($jobs)) {
+            return;
+        }
+
         foreach ($jobs as $job) {
             @unlink($job['zip_path']);
             $extractDir = dirname($job['zip_path']) . '/' . $job['id_tvtime_import'];
@@ -56,6 +70,24 @@ class TvTimeImport extends Model
                 @rmdir($extractDir);
             }
         }
+
+        $jobIdParams  = array();
+        $placeholders = array();
+        foreach (array_values(array_column($jobs, 'id_tvtime_import')) as $index => $jobId) {
+            $key               = 'job_id_' . $index;
+            $placeholders[]    = ':' . $key;
+            $jobIdParams[$key] = array('value' => (int) $jobId, 'type' => PDO::PARAM_INT);
+        }
+        $inClause = implode(',', $placeholders);
+
+        $this->mysql->query(
+            "DELETE FROM movie_import_pending WHERE id_tvtime_import IN ($inClause)",
+            $jobIdParams
+        );
+        $this->mysql->query(
+            "DELETE FROM series_import_pending WHERE id_tvtime_import IN ($inClause)",
+            $jobIdParams
+        );
 
         $sql = '
             DELETE FROM tvtime_import

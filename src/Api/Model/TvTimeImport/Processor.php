@@ -58,7 +58,18 @@ use Webservice\Model\User;
 final class Processor
 {
 
-    private const int TIME_BUDGET_SECONDS = 45;
+    // well under any of the three separate limits a batch has to fit
+    // inside: PHP's own max_execution_time (confirmed dev runs with this
+    // unlimited - IS_DEV's php.ini sets 0 - which is exactly why this never
+    // surfaced there; production's real, finite default silently killed
+    // the request mid-batch instead, before recordBatch() ever got to run,
+    // so nothing about that batch's progress was ever persisted even
+    // though the individual Series::sync()/Episode::syncForSeries() calls
+    // already made it into the DB - explains "does something but progress
+    // never updates" exactly), Apache's own 60s reverse-proxy timeout, and
+    // a browser/CDN's own fetch timeout. The 45s this replaced only ever
+    // accounted for the second of those three.
+    private const int TIME_BUDGET_SECONDS = 20;
 
     public function __construct(private readonly Client $client)
     {

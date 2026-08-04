@@ -36,6 +36,12 @@ final class JobRunner
      */
     public function processOneBatch(array $job): bool
     {
+        // best-effort extra safety margin on top of Processor's own
+        // TIME_BUDGET_SECONDS (see that constant's own docblock on why it
+        // matters) - a no-op if the host disables this function, which
+        // some shared hosting does, but harmless either way
+        @set_time_limit(30);
+
         $importModel = new TvTimeImportModel();
         $id          = (int) $job['id_tvtime_import'];
 
