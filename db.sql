@@ -516,18 +516,14 @@ CREATE TABLE `serie_lang` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for serie_genre (counterpart of movie_genre - same
--- reasoning: TheTVDB's genre taxonomy has no per-language translation, so
--- `slug` is stored for the app to localize the label itself client-side,
--- falling back to the raw English `name` for a slug it doesn't have a
--- translation for yet; full replace each series sync cycle)
+-- Table structure for serie_genre (a plain join table against `genre` -
+-- see that table's own comment for why slug/name live there instead of
+-- here; counterpart of movie_genre. Full replace each series sync cycle)
 -- ----------------------------
 DROP TABLE IF EXISTS `serie_genre`;
 CREATE TABLE `serie_genre` (
   `id_serie` mediumint(8) unsigned NOT NULL,
   `tvdb_genre_id` smallint(5) unsigned NOT NULL,
-  `slug` varchar(100) DEFAULT NULL,
-  `name` varchar(100) DEFAULT NULL,
   PRIMARY KEY (`id_serie`, `tvdb_genre_id`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -653,19 +649,33 @@ CREATE TABLE `movie_lang` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for movie_genre (TheTVDB's genre taxonomy has no
--- per-language translation - confirmed empirically, a genre's name never
--- varies with Accept-Language - so unlike movie_lang there's no synced_at/
--- TTL here either, just a full replace each movie sync cycle. `slug` lets
--- the app localize the label itself client-side, `name` is the raw English
--- fallback for a slug it doesn't have a translation for yet)
+-- Table structure for genre (TheTVDB's own genre taxonomy - shared between
+-- movies and series, same ids, confirmed empirically - so movie_genre/
+-- serie_genre are plain join tables against this one rather than each
+-- keeping their own copy of slug/name. No per-language translation either
+-- - confirmed empirically, a genre's name never varies with Accept-
+-- Language - so no synced_at/TTL here, just an upsert whenever a movie/
+-- series sync happens to bring one along. `slug` lets the app localize the
+-- label itself client-side, `name` is the raw English fallback for a slug
+-- it doesn't have a translation for yet)
+-- ----------------------------
+DROP TABLE IF EXISTS `genre`;
+CREATE TABLE `genre` (
+  `tvdb_genre_id` smallint(5) unsigned NOT NULL,
+  `slug` varchar(100) DEFAULT NULL,
+  `name` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`tvdb_genre_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_genre (a plain join table against `genre` -
+-- see that table's own comment for why slug/name live there instead of
+-- here. Full replace each movie sync cycle)
 -- ----------------------------
 DROP TABLE IF EXISTS `movie_genre`;
 CREATE TABLE `movie_genre` (
   `id_movie` mediumint(8) unsigned NOT NULL,
   `tvdb_genre_id` smallint(5) unsigned NOT NULL,
-  `slug` varchar(100) DEFAULT NULL,
-  `name` varchar(100) DEFAULT NULL,
   PRIMARY KEY (`id_movie`, `tvdb_genre_id`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

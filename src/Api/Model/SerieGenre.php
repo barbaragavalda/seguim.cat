@@ -6,9 +6,9 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * counterpart of Api\Model\MovieGenre - same reasoning throughout (no
- * per-language translation in TheTVDB's own genre taxonomy, `slug` stored
- * for client-side l10n, full replace each sync cycle)
+ * a plain join table against Api\Model\Genre - see that class' own
+ * docblock for why slug/name live there instead of here (counterpart of
+ * Api\Model\MovieGenre)
  */
 class SerieGenre extends Model
 {
@@ -16,7 +16,9 @@ class SerieGenre extends Model
     public function syncForSerie(int $idSerie, array $genres): void
     {
         $this->deleteForSerie($idSerie);
+        $genreModel = new Genre();
         foreach ($genres as $genre) {
+            $genreModel->upsert($genre);
             $this->insert($idSerie, $genre);
         }
     }
@@ -24,10 +26,11 @@ class SerieGenre extends Model
     public function forSerie(int $idSerie): array
     {
         $sql    = '
-            SELECT tvdb_genre_id, slug, name
-            FROM serie_genre
-            WHERE id_serie = :id_serie
-            ORDER BY name
+            SELECT g.tvdb_genre_id, g.slug, g.name
+            FROM serie_genre sg
+            INNER JOIN genre g ON g.tvdb_genre_id = sg.tvdb_genre_id
+            WHERE sg.id_serie = :id_serie
+            ORDER BY g.name
         ';
         $params = array(
             'id_serie' => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
@@ -50,14 +53,12 @@ class SerieGenre extends Model
             return;
         }
         $sql    = '
-            INSERT INTO serie_genre (id_serie, tvdb_genre_id, slug, name)
-            VALUES (:id_serie, :tvdb_genre_id, :slug, :name)
+            INSERT INTO serie_genre (id_serie, tvdb_genre_id)
+            VALUES (:id_serie, :tvdb_genre_id)
         ';
         $params = array(
             'id_serie'      => array('value' => $idSerie, 'type' => PDO::PARAM_INT),
             'tvdb_genre_id' => array('value' => $genre['id'], 'type' => PDO::PARAM_INT),
-            'slug'          => array('value' => $genre['slug'] ?? null, 'type' => PDO::PARAM_STR),
-            'name'          => array('value' => $genre['name'] ?? null, 'type' => PDO::PARAM_STR),
         );
         $this->mysql->query($sql, $params);
     }
