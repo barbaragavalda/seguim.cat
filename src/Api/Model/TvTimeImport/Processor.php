@@ -61,15 +61,17 @@ final class Processor
     // well under any of the three separate limits a batch has to fit
     // inside: PHP's own max_execution_time (confirmed dev runs with this
     // unlimited - IS_DEV's php.ini sets 0 - which is exactly why this never
-    // surfaced there; production's real, finite default silently killed
-    // the request mid-batch instead, before recordBatch() ever got to run,
-    // so nothing about that batch's progress was ever persisted even
-    // though the individual Series::sync()/Episode::syncForSeries() calls
-    // already made it into the DB - explains "does something but progress
-    // never updates" exactly), Apache's own 60s reverse-proxy timeout, and
-    // a browser/CDN's own fetch timeout. The 45s this replaced only ever
-    // accounted for the second of those three.
-    private const int TIME_BUDGET_SECONDS = 20;
+    // surfaced there; production's real limit was confirmed for real via
+    // JobRunner's own register_shutdown_function catch - it was a hard 10s,
+    // not the 45-then-20s this constant assumed, silently killing the
+    // request mid-batch before recordBatch() ever got to run. Now raised on
+    // Cdmon's own PHP config to 60s - see JobRunner::processOneBatch()'s
+    // own set_time_limit() call for the matching safety-margin value),
+    // Apache's own 60s reverse-proxy timeout, and a browser/CDN's own fetch
+    // timeout. 40s leaves ~15s of headroom under the 55s script limit for
+    // whichever TheTVDB call is in flight when the deadline is checked (a
+    // single call can itself take up to CURLOPT_TIMEOUT's own 15s)
+    private const int TIME_BUDGET_SECONDS = 40;
 
     public function __construct(private readonly Client $client)
     {

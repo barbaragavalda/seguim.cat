@@ -39,8 +39,10 @@ final class JobRunner
         // best-effort extra safety margin on top of Processor's own
         // TIME_BUDGET_SECONDS (see that constant's own docblock on why it
         // matters) - a no-op if the host disables this function, which
-        // some shared hosting does, but harmless either way
-        @set_time_limit(30);
+        // some shared hosting does, but harmless either way. 55s leaves a
+        // 5s margin under Cdmon's own max_execution_time (raised to 60s -
+        // see Processor::TIME_BUDGET_SECONDS' own docblock for the story)
+        @set_time_limit(55);
 
         $importModel = new TvTimeImportModel();
         $id          = (int) $job['id_user_import'];
@@ -52,6 +54,38 @@ final class JobRunner
             // against a stale "already done" snapshot
             return false;
         }
+
+        // a true PHP fatal error (max_execution_time hit, memory exhausted,
+        // ...) isn't a Throwable the catch block below can see - without
+        // this, the request just dies mid-batch with the row still stuck on
+        // 'processing' and nothing in the DB explaining why (confirmed
+        // happening for real in production: a batch stopped advancing with
+        // no error recorded at all). error_clear_last() first so a stale
+        // error from earlier in the request (if any) isn't misattributed to
+        // this batch. $batchInProgress (flipped false in the outer finally
+        // below) keeps this from firing on a fatal error elsewhere in the
+        // same request *after* this batch already finished normally -
+        // register_shutdown_function runs at the very end of the whole
+        // request, not right after this method returns. Only fires for
+        // errors PHP itself terminates the script over - it does NOT fire
+        // if the OS/webserver kills the process outright (OOM killer,
+        // Apache's own hard timeout), so this is a best-effort improvement,
+        // not a complete guarantee
+        error_clear_last();
+        $batchInProgress = true;
+        register_shutdown_function(static function () use ($importModel, $id, &$batchInProgress): void {
+            if (!$batchInProgress) {
+                return;
+            }
+            $error = error_get_last();
+            $fatal = array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR);
+            if ($error !== null && in_array($error['type'], $fatal, true)) {
+                $importModel->markFailed(
+                    $id,
+                    $error['message'] . ' in ' . $error['file'] . ':' . $error['line'],
+                );
+            }
+        });
 
         try {
             if ($job['status'] === 'pending') {
@@ -107,6 +141,7 @@ final class JobRunner
 
             return $finished;
         } finally {
+            $batchInProgress = false;
             $importModel->releaseProcessingLock($id);
         }
     }
