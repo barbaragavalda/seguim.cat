@@ -98,8 +98,10 @@ class Series extends Model
         $this->loadWithTvdbId($tvdbId);
 
         // same 24h sync cycle as the series' own base data - a full replace
-        // each cycle, same reasoning as Movie::sync()'s own genre sync
+        // each cycle, same reasoning as Movie::sync()'s own genre/trailer
+        // sync
         (new SerieGenre())->syncForSerie((int) $this->info['id_serie'], $data['genres'] ?? array());
+        (new SerieTrailer())->syncForSerie((int) $this->info['id_serie'], $data['trailers'] ?? array());
 
         return $this->info;
     }

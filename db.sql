@@ -532,6 +532,24 @@ CREATE TABLE `serie_genre` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
+-- Table structure for serie_trailer (counterpart of movie_trailer - same
+-- reasoning: TheTVDB returns a flat list of separate trailer entries, each
+-- already tagged with its own `language`, not one trailer translated N
+-- ways, so there's nothing to sync into a *_lang table)
+-- ----------------------------
+DROP TABLE IF EXISTS `serie_trailer`;
+CREATE TABLE `serie_trailer` (
+  `id_serie_trailer` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_serie` mediumint(8) unsigned NOT NULL,
+  `tvdb_trailer_id` int(10) unsigned NOT NULL,
+  `name` varchar(255) DEFAULT NULL,
+  `url` varchar(500) DEFAULT NULL,
+  `language` char(3) DEFAULT NULL,
+  PRIMARY KEY (`id_serie_trailer`) USING BTREE,
+  UNIQUE KEY `id_serie_trailer_lookup` (`id_serie`, `tvdb_trailer_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
 -- Table structure for episode (local lazy mirror of TheTVDB episodes)
 -- ----------------------------
 DROP TABLE IF EXISTS `episode`;

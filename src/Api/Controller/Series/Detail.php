@@ -8,7 +8,9 @@ use Api\Model\EpisodeLang;
 use Api\Model\Series as SeriesModel;
 use Api\Model\SerieGenre;
 use Api\Model\SerieLang;
+use Api\Model\SerieTrailer;
 use Api\Model\TheTvdb\Client;
+use Api\Model\TheTvdb\Languages;
 use Api\Model\WatchedEpisode;
 use Api\Model\Watchlist;
 use Core\Controller\CacheManager;
@@ -80,6 +82,11 @@ class Detail extends Controller
         // SerieGenre's own docblock for why; only genre labels vary by
         // culture, and that's handled client-side (l10n by slug), not here
         $info['genres'] = (new SerieGenre())->forSerie($info['id_serie']);
+
+        $info['trailer'] = (new SerieTrailer())->bestForLanguage(
+            $info['id_serie'],
+            Languages::tvdbCodeForCulture($culture),
+        );
 
         // same default_name/default_overview fallback as the series itself
         // above, per episode
