@@ -36,8 +36,8 @@ class TvTimeImport extends Model
      * files would otherwise be left orphaned on disk once the account is
      * gone) and from Api\Controller\Import\TvTime, right before starting a
      * fresh import - without this, an old job (done, failed, or abandoned
-     * mid-way) and whatever it left behind (movie_import_pending/
-     * series_import_pending rows tied to it, tagged rewatch rows via
+     * mid-way) and whatever it left behind (user_movie_pending/
+     * user_serie_pending rows tied to it, tagged rewatch rows via
      * WatchedEpisode::syncRewatchesFromImport()) just piles up: confirmed
      * live this session, repeatedly, as stray pending-resolution rows
      * surviving a manual cleanup that only touched tvtime_import itself.
@@ -81,11 +81,11 @@ class TvTimeImport extends Model
         $inClause = implode(',', $placeholders);
 
         $this->mysql->query(
-            "DELETE FROM movie_import_pending WHERE id_tvtime_import IN ($inClause)",
+            "DELETE FROM user_movie_pending WHERE id_tvtime_import IN ($inClause)",
             $jobIdParams
         );
         $this->mysql->query(
-            "DELETE FROM series_import_pending WHERE id_tvtime_import IN ($inClause)",
+            "DELETE FROM user_serie_pending WHERE id_tvtime_import IN ($inClause)",
             $jobIdParams
         );
 

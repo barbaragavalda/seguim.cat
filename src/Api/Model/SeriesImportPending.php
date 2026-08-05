@@ -37,7 +37,7 @@ class SeriesImportPending extends Model
         array $candidates
     ): void {
         $sql    = '
-            INSERT INTO series_import_pending
+            INSERT INTO user_serie_pending
                 (id_user, id_tvtime_import, show_name, watch_later, stopped_watching, watchlist_created_at, watched_episodes, rewatch_episodes, candidates)
             VALUES
                 (:id_user, :id_tvtime_import, :show_name, :watch_later, :stopped_watching, :watchlist_created_at, :watched_episodes, :rewatch_episodes, :candidates)
@@ -69,7 +69,7 @@ class SeriesImportPending extends Model
 
     /**
      * Records that $idUserList wants this pending show as a member, once
-     * resolved - see series_import_pending_list's own docblock in db.sql.
+     * resolved - see user_serie_list_pending's own docblock in db.sql.
      * Idempotent (a re-import or a resumed batch hitting the same list/show
      * pair again is a no-op) via INSERT IGNORE rather than a SELECT-then-
      * INSERT, since the table's own unique key already guarantees this
@@ -78,7 +78,7 @@ class SeriesImportPending extends Model
     public function linkList(int $idSeriesImportPending, int $idUserList, ?string $addedAt): void
     {
         $sql    = '
-            INSERT IGNORE INTO series_import_pending_list (id_series_import_pending, id_user_list, added_at)
+            INSERT IGNORE INTO user_serie_list_pending (id_user_serie_pending, id_user_list, added_at)
             VALUES (:id_pending, :id_user_list, :added_at)
         ';
         $params = array(
@@ -96,8 +96,8 @@ class SeriesImportPending extends Model
     {
         $sql    = '
             SELECT id_user_list, added_at
-            FROM series_import_pending_list
-            WHERE id_series_import_pending = :id_pending
+            FROM user_serie_list_pending
+            WHERE id_user_serie_pending = :id_pending
         ';
         $params = array('id_pending' => array('value' => $idSeriesImportPending, 'type' => PDO::PARAM_INT));
         $rows   = $this->mysql->query($sql, $params);
@@ -118,8 +118,8 @@ class SeriesImportPending extends Model
     {
         $sql    = '
             SELECT COUNT(*) AS cnt
-            FROM series_import_pending_list sipl
-            JOIN series_import_pending sip ON sip.id_series_import_pending = sipl.id_series_import_pending
+            FROM user_serie_list_pending sipl
+            JOIN user_serie_pending sip ON sip.id_user_serie_pending = sipl.id_user_serie_pending
             WHERE sipl.id_user_list = :id_user_list AND sip.resolved = 0
         ';
         $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
@@ -135,7 +135,7 @@ class SeriesImportPending extends Model
     {
         $sql    = '
             SELECT 1
-            FROM series_import_pending
+            FROM user_serie_pending
             WHERE id_user = :id_user AND show_name = :show_name AND resolved = 1
             LIMIT 1
         ';
@@ -153,7 +153,7 @@ class SeriesImportPending extends Model
     {
         $sql    = '
             SELECT *
-            FROM series_import_pending
+            FROM user_serie_pending
             WHERE id_user = :id_user AND resolved = 0
             ORDER BY created ASC
         ';
@@ -177,8 +177,8 @@ class SeriesImportPending extends Model
     public function idForShowName(int $idUser, string $showName): ?int
     {
         $sql    = '
-            SELECT id_series_import_pending
-            FROM series_import_pending
+            SELECT id_user_serie_pending
+            FROM user_serie_pending
             WHERE id_user = :id_user AND show_name = :show_name
             LIMIT 1
         ';
@@ -187,15 +187,15 @@ class SeriesImportPending extends Model
             'show_name' => array('value' => $showName, 'type' => PDO::PARAM_STR),
         );
         $rows   = $this->mysql->query($sql, $params);
-        return isset($rows[0]) ? (int) $rows[0]['id_series_import_pending'] : null;
+        return isset($rows[0]) ? (int) $rows[0]['id_user_serie_pending'] : null;
     }
 
     private function findOwnedByUser(int $id, int $idUser): ?array
     {
         $sql    = '
             SELECT *
-            FROM series_import_pending
-            WHERE id_series_import_pending = :id AND id_user = :id_user
+            FROM user_serie_pending
+            WHERE id_user_serie_pending = :id AND id_user = :id_user
             LIMIT 1
         ';
         $params = array(
@@ -234,7 +234,7 @@ class SeriesImportPending extends Model
 
         $watchedEpisodes = json_decode($pending['watched_episodes'], true) ?? array();
         $rewatchEpisodes = json_decode($pending['rewatch_episodes'], true) ?? array();
-        $linkedLists     = $this->linkedLists((int) $pending['id_series_import_pending']);
+        $linkedLists     = $this->linkedLists((int) $pending['id_user_serie_pending']);
         $userListSerie   = new UserListSerie();
         $watchlist       = new Watchlist();
 
@@ -282,7 +282,7 @@ class SeriesImportPending extends Model
 
             // this show was also wanted as a member of one or more lists
             // (Processor::processLists() linked it here instead of silently
-            // dropping it - see series_import_pending_list's own docblock) -
+            // dropping it - see user_serie_list_pending's own docblock) -
             // now that it's actually synced, add it to each of them too
             foreach ($linkedLists as $linked) {
                 $userListSerie->add($linked['id_user_list'], (int) $info['id_serie'], $linked['added_at']);
@@ -302,7 +302,7 @@ class SeriesImportPending extends Model
             return false;
         }
 
-        $this->markResolved((int) $pending['id_series_import_pending']);
+        $this->markResolved((int) $pending['id_user_serie_pending']);
         return true;
     }
 
@@ -317,7 +317,7 @@ class SeriesImportPending extends Model
         if ($pending === null) {
             return false;
         }
-        $this->markResolved((int) $pending['id_series_import_pending']);
+        $this->markResolved((int) $pending['id_user_serie_pending']);
         return true;
     }
 
@@ -328,9 +328,9 @@ class SeriesImportPending extends Model
     private function markResolved(int $id): void
     {
         $sql    = '
-            UPDATE series_import_pending
+            UPDATE user_serie_pending
             SET resolved = 1
-            WHERE id_series_import_pending = :id
+            WHERE id_user_serie_pending = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
         $this->mysql->query($sql, $params);
@@ -339,7 +339,7 @@ class SeriesImportPending extends Model
     public function removeAllForUser(int $idUser): void
     {
         $sql    = '
-            DELETE FROM series_import_pending
+            DELETE FROM user_serie_pending
             WHERE id_user = :id_user
         ';
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));

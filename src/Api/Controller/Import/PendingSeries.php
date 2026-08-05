@@ -24,7 +24,7 @@ class PendingSeries extends Controller
             'pending',
             array_map(
                 static fn(array $row): array => array(
-                    'id'                     => (int) $row['id_series_import_pending'],
+                    'id'                     => (int) $row['id_user_serie_pending'],
                     'show_name'              => $row['show_name'],
                     // lets the resolution screen show "X episodes watched"
                     // vs. a plain "in your watchlist", same distinction

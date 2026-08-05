@@ -23,7 +23,7 @@ class PendingMovies extends Controller
             'pending',
             array_map(
                 static fn(array $row): array => array(
-                    'id'            => (int) $row['id_movie_import_pending'],
+                    'id'            => (int) $row['id_user_movie_pending'],
                     'movie_name'    => $row['movie_name'],
                     'expected_year' => $row['expected_year'],
                     // lets the resolution screen show "watched on <date>"

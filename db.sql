@@ -864,7 +864,7 @@ CREATE TABLE `tvtime_import` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for movie_import_pending (a movie title
+-- Table structure for user_movie_pending (a movie title
 -- Api\Model\TvTimeImport\MovieMatcher couldn't confidently resolve on its
 -- own - either several TheTVDB movies share that exact title with no way to
 -- tell them apart, or nothing matched at all. Rather than silently skipping
@@ -872,9 +872,9 @@ CREATE TABLE `tvtime_import` (
 -- for the user to resolve by hand later - see Api\Model\MovieImportPending
 -- and the app's own pending-movies resolution screen)
 -- ----------------------------
-DROP TABLE IF EXISTS `movie_import_pending`;
-CREATE TABLE `movie_import_pending` (
-  `id_movie_import_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+DROP TABLE IF EXISTS `user_movie_pending`;
+CREATE TABLE `user_movie_pending` (
+  `id_user_movie_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_tvtime_import` mediumint(8) unsigned NOT NULL,
   `movie_name` varchar(255) NOT NULL,
@@ -899,7 +899,7 @@ CREATE TABLE `movie_import_pending` (
   -- user already answered; see that class' own docblock
   `resolved` tinyint(1) NOT NULL DEFAULT 0,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_movie_import_pending`) USING BTREE,
+  PRIMARY KEY (`id_user_movie_pending`) USING BTREE,
   -- re-running an import (or a second import later) that hits the same
   -- still-unresolved title updates this row in place instead of piling up
   -- duplicates
@@ -908,21 +908,21 @@ CREATE TABLE `movie_import_pending` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for series_import_pending (a show TV Time's own tv_show_id
+-- Table structure for user_serie_pending (a show TV Time's own tv_show_id
 -- no longer resolves on TheTVDB at all - TheTVDB renumbers/merges series ids
 -- over time, so the export's old id is dead while the same show is findable
 -- by name under a new one; Api\Model\TvTimeImport\SeriesMatcher's own
 -- name search either found more than one same-titled candidate with no way
--- to tell them apart, or found nothing. Mirrors movie_import_pending above,
+-- to tell them apart, or found nothing. Mirrors user_movie_pending above,
 -- but the watched/rewatch snapshot is keyed by season+episode NUMBER rather
 -- than TheTVDB episode id - the old episode ids are exactly as dead as the
 -- show id itself once a new id is picked, but season/episode numbers still
 -- line up against the new id's own freshly-synced episode list, letting
 -- watch history be recovered instead of just the show identity)
 -- ----------------------------
-DROP TABLE IF EXISTS `series_import_pending`;
-CREATE TABLE `series_import_pending` (
-  `id_series_import_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+DROP TABLE IF EXISTS `user_serie_pending`;
+CREATE TABLE `user_serie_pending` (
+  `id_user_serie_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_tvtime_import` mediumint(8) unsigned NOT NULL,
   `show_name` varchar(255) NOT NULL,
@@ -940,10 +940,10 @@ CREATE TABLE `series_import_pending` (
   -- JSON array of up to 5 {tvdb_id, name, year, image} - SeriesMatcher's own
   -- candidates at import time
   `candidates` text NOT NULL,
-  -- see movie_import_pending.resolved's own comment, identical reasoning
+  -- see user_movie_pending.resolved's own comment, identical reasoning
   `resolved` tinyint(1) NOT NULL DEFAULT 0,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_series_import_pending`) USING BTREE,
+  PRIMARY KEY (`id_user_serie_pending`) USING BTREE,
   UNIQUE KEY `id_user_show_name` (`id_user`, `show_name`),
   KEY `id_tvtime_import` (`id_tvtime_import`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -1014,48 +1014,48 @@ CREATE TABLE `user_list_movie` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for series_import_pending_list (which user_list(s) wanted
--- a series_import_pending row's show as a member - Processor::processLists()
+-- Table structure for user_serie_list_pending (which user_list(s) wanted
+-- a user_serie_pending row's show as a member - Processor::processLists()
 -- used to just silently drop a list's own series/movie whenever it couldn't
 -- resolve it (dead tvdb_id with no SeriesMatcher fallback at all, or an
 -- ambiguous/unmatched movie); it now reuses the exact same
--- series_import_pending/movie_import_pending rows the main show/movie
+-- user_serie_pending/user_movie_pending rows the main show/movie
 -- import already creates for this purpose, linking this list to that row
 -- instead of duplicating its own separate pending concept. Once the user
 -- resolves that pending row (Api\Model\SeriesImportPending::resolve()), it
 -- adds the newly-synced series to every list linked here, not just the
 -- user's overall watchlist - see resolve()'s own docblock)
 -- ----------------------------
-DROP TABLE IF EXISTS `series_import_pending_list`;
-CREATE TABLE `series_import_pending_list` (
-  `id_series_import_pending_list` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
-  `id_series_import_pending` mediumint(8) unsigned NOT NULL,
+DROP TABLE IF EXISTS `user_serie_list_pending`;
+CREATE TABLE `user_serie_list_pending` (
+  `id_user_serie_list_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user_serie_pending` mediumint(8) unsigned NOT NULL,
   `id_user_list` mediumint(8) unsigned NOT NULL,
   -- the list item's own added_at from the export (Parser::parseLists()) -
   -- applied to user_list_serie.created once this resolves, same as a
   -- normally-resolved list series would get
   `added_at` timestamp NULL DEFAULT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_series_import_pending_list`) USING BTREE,
+  PRIMARY KEY (`id_user_serie_list_pending`) USING BTREE,
   -- re-running an import (or a later batch of the same one) that hits the
   -- same still-unresolved show in the same list is a no-op, not a duplicate
-  UNIQUE KEY `id_pending_id_user_list` (`id_series_import_pending`, `id_user_list`),
+  UNIQUE KEY `id_pending_id_user_list` (`id_user_serie_pending`, `id_user_list`),
   KEY `id_user_list` (`id_user_list`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for movie_import_pending_list - see
--- series_import_pending_list's own docblock just above, identical shape
+-- Table structure for user_movie_list_pending - see
+-- user_serie_list_pending's own docblock just above, identical shape
 -- ----------------------------
-DROP TABLE IF EXISTS `movie_import_pending_list`;
-CREATE TABLE `movie_import_pending_list` (
-  `id_movie_import_pending_list` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
-  `id_movie_import_pending` mediumint(8) unsigned NOT NULL,
+DROP TABLE IF EXISTS `user_movie_list_pending`;
+CREATE TABLE `user_movie_list_pending` (
+  `id_user_movie_list_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+  `id_user_movie_pending` mediumint(8) unsigned NOT NULL,
   `id_user_list` mediumint(8) unsigned NOT NULL,
   `added_at` timestamp NULL DEFAULT NULL,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_movie_import_pending_list`) USING BTREE,
-  UNIQUE KEY `id_pending_id_user_list` (`id_movie_import_pending`, `id_user_list`),
+  PRIMARY KEY (`id_user_movie_list_pending`) USING BTREE,
+  UNIQUE KEY `id_pending_id_user_list` (`id_user_movie_pending`, `id_user_list`),
   KEY `id_user_list` (`id_user_list`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

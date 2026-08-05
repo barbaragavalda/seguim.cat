@@ -41,7 +41,7 @@ class Show extends Controller
         $this->assign('moviesHasMore', $movies['hasMore']);
 
         // how many of this list's own members are still waiting on a
-        // pending series_import_pending/movie_import_pending row - see
+        // pending user_serie_pending/user_movie_pending row - see
         // those tables' own docblocks in db.sql (Processor::processLists()
         // links a still-unresolved series/movie to its list instead of
         // silently dropping it)

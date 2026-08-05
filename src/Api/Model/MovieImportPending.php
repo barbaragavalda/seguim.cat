@@ -35,7 +35,7 @@ class MovieImportPending extends Model
         array $candidates
     ): void {
         $sql    = '
-            INSERT INTO movie_import_pending
+            INSERT INTO user_movie_pending
                 (id_user, id_tvtime_import, movie_name, expected_year, watchlist_created_at, watched_at, rewatch_at, candidates)
             VALUES
                 (:id_user, :id_tvtime_import, :movie_name, :expected_year, :watchlist_created_at, :watched_at, :rewatch_at, :candidates)
@@ -69,7 +69,7 @@ class MovieImportPending extends Model
     public function linkList(int $idMovieImportPending, int $idUserList, ?string $addedAt): void
     {
         $sql    = '
-            INSERT IGNORE INTO movie_import_pending_list (id_movie_import_pending, id_user_list, added_at)
+            INSERT IGNORE INTO user_movie_list_pending (id_user_movie_pending, id_user_list, added_at)
             VALUES (:id_pending, :id_user_list, :added_at)
         ';
         $params = array(
@@ -87,8 +87,8 @@ class MovieImportPending extends Model
     {
         $sql    = '
             SELECT id_user_list, added_at
-            FROM movie_import_pending_list
-            WHERE id_movie_import_pending = :id_pending
+            FROM user_movie_list_pending
+            WHERE id_user_movie_pending = :id_pending
         ';
         $params = array('id_pending' => array('value' => $idMovieImportPending, 'type' => PDO::PARAM_INT));
         $rows   = $this->mysql->query($sql, $params);
@@ -110,8 +110,8 @@ class MovieImportPending extends Model
     {
         $sql    = '
             SELECT COUNT(*) AS cnt
-            FROM movie_import_pending_list mipl
-            JOIN movie_import_pending mip ON mip.id_movie_import_pending = mipl.id_movie_import_pending
+            FROM user_movie_list_pending mipl
+            JOIN user_movie_pending mip ON mip.id_user_movie_pending = mipl.id_user_movie_pending
             WHERE mipl.id_user_list = :id_user_list AND mip.resolved = 0
         ';
         $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
@@ -132,7 +132,7 @@ class MovieImportPending extends Model
     {
         $sql    = '
             SELECT 1
-            FROM movie_import_pending
+            FROM user_movie_pending
             WHERE id_user = :id_user AND movie_name = :movie_name AND resolved = 1
             LIMIT 1
         ';
@@ -150,7 +150,7 @@ class MovieImportPending extends Model
     {
         $sql    = '
             SELECT *
-            FROM movie_import_pending
+            FROM user_movie_pending
             WHERE id_user = :id_user AND resolved = 0
             ORDER BY created ASC
         ';
@@ -172,8 +172,8 @@ class MovieImportPending extends Model
     public function idForMovieName(int $idUser, string $movieName): ?int
     {
         $sql    = '
-            SELECT id_movie_import_pending
-            FROM movie_import_pending
+            SELECT id_user_movie_pending
+            FROM user_movie_pending
             WHERE id_user = :id_user AND movie_name = :movie_name
             LIMIT 1
         ';
@@ -182,15 +182,15 @@ class MovieImportPending extends Model
             'movie_name' => array('value' => $movieName, 'type' => PDO::PARAM_STR),
         );
         $rows   = $this->mysql->query($sql, $params);
-        return isset($rows[0]) ? (int) $rows[0]['id_movie_import_pending'] : null;
+        return isset($rows[0]) ? (int) $rows[0]['id_user_movie_pending'] : null;
     }
 
     private function findOwnedByUser(int $id, int $idUser): ?array
     {
         $sql    = '
             SELECT *
-            FROM movie_import_pending
-            WHERE id_movie_import_pending = :id AND id_user = :id_user
+            FROM user_movie_pending
+            WHERE id_user_movie_pending = :id AND id_user = :id_user
             LIMIT 1
         ';
         $params = array(
@@ -235,7 +235,7 @@ class MovieImportPending extends Model
             return null;
         }
 
-        $linkedLists   = $this->linkedLists((int) $pending['id_movie_import_pending']);
+        $linkedLists   = $this->linkedLists((int) $pending['id_user_movie_pending']);
         $userListMovie = new UserListMovie();
 
         $appliedAny = false;
@@ -264,7 +264,7 @@ class MovieImportPending extends Model
             return false;
         }
 
-        $this->markResolved((int) $pending['id_movie_import_pending']);
+        $this->markResolved((int) $pending['id_user_movie_pending']);
         return true;
     }
 
@@ -290,7 +290,7 @@ class MovieImportPending extends Model
 
         // this movie was also wanted as a member of one or more lists
         // (Processor::processLists() linked it here instead of silently
-        // dropping it - see movie_import_pending_list's own docblock) -
+        // dropping it - see user_movie_list_pending's own docblock) -
         // now that it's actually synced, add it to each of them too
         foreach ($linkedLists as $linked) {
             $userListMovie->add($linked['id_user_list'], (int) $info['id_movie'], $linked['added_at']);
@@ -311,7 +311,7 @@ class MovieImportPending extends Model
         if ($pending === null) {
             return false;
         }
-        $this->markResolved((int) $pending['id_movie_import_pending']);
+        $this->markResolved((int) $pending['id_user_movie_pending']);
         return true;
     }
 
@@ -324,9 +324,9 @@ class MovieImportPending extends Model
     private function markResolved(int $id): void
     {
         $sql    = '
-            UPDATE movie_import_pending
+            UPDATE user_movie_pending
             SET resolved = 1
-            WHERE id_movie_import_pending = :id
+            WHERE id_user_movie_pending = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
         $this->mysql->query($sql, $params);
@@ -335,7 +335,7 @@ class MovieImportPending extends Model
     public function removeAllForUser(int $idUser): void
     {
         $sql    = '
-            DELETE FROM movie_import_pending
+            DELETE FROM user_movie_pending
             WHERE id_user = :id_user
         ';
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
