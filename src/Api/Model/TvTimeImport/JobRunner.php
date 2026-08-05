@@ -43,7 +43,7 @@ final class JobRunner
         @set_time_limit(30);
 
         $importModel = new TvTimeImportModel();
-        $id          = (int) $job['id_tvtime_import'];
+        $id          = (int) $job['id_user_import'];
 
         if (!$importModel->acquireProcessingLock($id)) {
             // another request (another tab/device polling this same job,

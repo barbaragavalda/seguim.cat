@@ -19,7 +19,7 @@ class TvTimeImport extends Model
     public function create(int $idUser, string $zipPath): int
     {
         $sql    = '
-            INSERT INTO tvtime_import (id_user, zip_path)
+            INSERT INTO user_import (id_user, zip_path)
             VALUES (:id_user, :zip_path)
         ';
         $params = array(
@@ -40,7 +40,7 @@ class TvTimeImport extends Model
      * user_serie_pending rows tied to it, tagged rewatch rows via
      * WatchedEpisode::syncRewatchesFromImport()) just piles up: confirmed
      * live this session, repeatedly, as stray pending-resolution rows
-     * surviving a manual cleanup that only touched tvtime_import itself.
+     * surviving a manual cleanup that only touched user_import itself.
      * Deliberately doesn't touch user_serie_watchlist/user_episode_watched/
      * user_movie_watchlist/user_movie_watched/user_list - those are the
      * user's real, earned watch history from a *previous* import, not this
@@ -49,8 +49,8 @@ class TvTimeImport extends Model
     public function removeAllForUser(int $idUser): void
     {
         $sql    = '
-            SELECT id_tvtime_import, zip_path
-            FROM tvtime_import
+            SELECT id_user_import, zip_path
+            FROM user_import
             WHERE id_user = :id_user
         ';
         $params = array('id_user' => array('value' => $idUser, 'type' => PDO::PARAM_INT));
@@ -62,7 +62,7 @@ class TvTimeImport extends Model
 
         foreach ($jobs as $job) {
             @unlink($job['zip_path']);
-            $extractDir = dirname($job['zip_path']) . '/' . $job['id_tvtime_import'];
+            $extractDir = dirname($job['zip_path']) . '/' . $job['id_user_import'];
             if (is_dir($extractDir)) {
                 foreach (glob($extractDir . '/*') ?: array() as $file) {
                     @unlink($file);
@@ -73,7 +73,7 @@ class TvTimeImport extends Model
 
         $jobIdParams  = array();
         $placeholders = array();
-        foreach (array_values(array_column($jobs, 'id_tvtime_import')) as $index => $jobId) {
+        foreach (array_values(array_column($jobs, 'id_user_import')) as $index => $jobId) {
             $key               = 'job_id_' . $index;
             $placeholders[]    = ':' . $key;
             $jobIdParams[$key] = array('value' => (int) $jobId, 'type' => PDO::PARAM_INT);
@@ -81,16 +81,16 @@ class TvTimeImport extends Model
         $inClause = implode(',', $placeholders);
 
         $this->mysql->query(
-            "DELETE FROM user_movie_pending WHERE id_tvtime_import IN ($inClause)",
+            "DELETE FROM user_movie_pending WHERE id_user_import IN ($inClause)",
             $jobIdParams
         );
         $this->mysql->query(
-            "DELETE FROM user_serie_pending WHERE id_tvtime_import IN ($inClause)",
+            "DELETE FROM user_serie_pending WHERE id_user_import IN ($inClause)",
             $jobIdParams
         );
 
         $sql = '
-            DELETE FROM tvtime_import
+            DELETE FROM user_import
             WHERE id_user = :id_user
         ';
         $this->mysql->query($sql, $params);
@@ -100,8 +100,8 @@ class TvTimeImport extends Model
     {
         $sql    = '
             SELECT *
-            FROM tvtime_import
-            WHERE id_tvtime_import = :id AND id_user = :id_user
+            FROM user_import
+            WHERE id_user_import = :id AND id_user = :id_user
             LIMIT 1
         ';
         $params = array(
@@ -125,7 +125,7 @@ class TvTimeImport extends Model
     {
         $sql    = '
             SELECT *
-            FROM tvtime_import
+            FROM user_import
             WHERE id_user = :id_user AND status IN ("pending", "processing")
             ORDER BY created DESC
             LIMIT 1
@@ -169,7 +169,7 @@ class TvTimeImport extends Model
 
     private function lockName(int $id): string
     {
-        return 'tvtime_import_' . $id;
+        return 'user_import_' . $id;
     }
 
     /**
@@ -183,7 +183,7 @@ class TvTimeImport extends Model
     {
         $sql  = '
             SELECT *
-            FROM tvtime_import
+            FROM user_import
             WHERE status IN ("pending", "processing")
             ORDER BY created ASC
             LIMIT 1
@@ -251,8 +251,8 @@ class TvTimeImport extends Model
     {
         $sql    = '
             SELECT processed_show_ids, processed_list_keys, processed_movie_keys, summary
-            FROM tvtime_import
-            WHERE id_tvtime_import = :id
+            FROM user_import
+            WHERE id_user_import = :id
         ';
         $params = array('id' => array('value' => $id, 'type' => PDO::PARAM_INT));
         $job    = $this->mysql->query($sql, $params)[0] ?? array();
@@ -295,10 +295,10 @@ class TvTimeImport extends Model
         );
 
         $sql    = '
-            UPDATE tvtime_import
+            UPDATE user_import
             SET processed_show_ids = :show_ids, processed_list_keys = :list_keys,
                 processed_movie_keys = :movie_keys, summary = :summary
-            WHERE id_tvtime_import = :id
+            WHERE id_user_import = :id
         ';
         $params = array(
             'id'         => array('value' => $id, 'type' => PDO::PARAM_INT),
@@ -313,9 +313,9 @@ class TvTimeImport extends Model
     public function markFailed(int $id, string $error): void
     {
         $sql    = '
-            UPDATE tvtime_import
+            UPDATE user_import
             SET status = "failed", error = :error
-            WHERE id_tvtime_import = :id
+            WHERE id_user_import = :id
         ';
         $params = array(
             'id'    => array('value' => $id, 'type' => PDO::PARAM_INT),
@@ -327,9 +327,9 @@ class TvTimeImport extends Model
     private function updateStatus(int $id, string $status): void
     {
         $sql    = '
-            UPDATE tvtime_import
+            UPDATE user_import
             SET status = :status
-            WHERE id_tvtime_import = :id
+            WHERE id_user_import = :id
         ';
         $params = array(
             'id'     => array('value' => $id, 'type' => PDO::PARAM_INT),

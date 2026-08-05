@@ -718,12 +718,12 @@ CREATE TABLE `user_movie_watched` (
   `id_user_movie_watched` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `id_movie` mediumint(8) unsigned NOT NULL,
-  -- same import-provenance tag as user_episode_watched.id_tvtime_import -
+  -- same import-provenance tag as user_episode_watched.id_user_import -
   -- see its own comment. Here Api\Model\WatchedMovie::syncRewatchFromImport()
   -- dedupes by this plus the row's own exact watched_at (a movie rewatch
   -- carries a real distinct timestamp per event, unlike an episode
   -- rewatch's bare count - see Api\Model\TvTimeImport\Parser's own docblock)
-  `id_tvtime_import` mediumint(8) unsigned DEFAULT NULL,
+  `id_user_import` mediumint(8) unsigned DEFAULT NULL,
   `watched_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_movie_watched`) USING BTREE,
   KEY `id_user_movie` (`id_user`, `id_movie`)
@@ -772,7 +772,7 @@ CREATE TABLE `user_episode_watched` (
   -- app. Lets Api\Model\WatchedEpisode::syncRewatchesFromImport() tell "a
   -- previous import already recorded this rewatch" apart from "the user
   -- rewatched again since", so re-running an import doesn't double-count
-  `id_tvtime_import` mediumint(8) unsigned DEFAULT NULL,
+  `id_user_import` mediumint(8) unsigned DEFAULT NULL,
   `watched_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_episode_watched`) USING BTREE,
   KEY `id_user_episode` (`id_user`, `id_episode`)
@@ -823,18 +823,21 @@ CREATE TABLE `email_change` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for tvtime_import (background job tracking for the TV
--- Time GDPR-export importer - see Api\Controller\Import\*. Processed by a
--- separate cron-triggered endpoint rather than inline in the upload
--- request, since syncing a whole TV Time history from TheTVDB is many
--- minutes of HTTP calls - and confirmed empirically to exceed even
+-- Table structure for user_import (background job tracking for the TV
+-- Time GDPR-export importer - see Api\Controller\Import\*, Api\Model\
+-- TvTimeImport (PHP class name kept as-is - this table only ever tracks a
+-- TV Time import specifically, "user_import" is just this schema's own
+-- user_X naming convention, not a sign of a more generic import concept).
+-- Processed by a separate cron-triggered endpoint rather than inline in the
+-- upload request, since syncing a whole TV Time history from TheTVDB is
+-- many minutes of HTTP calls - and confirmed empirically to exceed even
 -- Apache's own 60s reverse-proxy Timeout well before finishing - so each
 -- call to that endpoint only processes one time-boxed batch of shows,
 -- resuming next call via processed_show_ids until nothing is left)
 -- ----------------------------
-DROP TABLE IF EXISTS `tvtime_import`;
-CREATE TABLE `tvtime_import` (
-  `id_tvtime_import` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
+DROP TABLE IF EXISTS `user_import`;
+CREATE TABLE `user_import` (
+  `id_user_import` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
   `status` enum('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
   `zip_path` varchar(500) NOT NULL,
@@ -858,7 +861,7 @@ CREATE TABLE `tvtime_import` (
   `error` text,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_tvtime_import`) USING BTREE,
+  PRIMARY KEY (`id_user_import`) USING BTREE,
   KEY `id_user` (`id_user`),
   KEY `status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -876,7 +879,7 @@ DROP TABLE IF EXISTS `user_movie_pending`;
 CREATE TABLE `user_movie_pending` (
   `id_user_movie_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
-  `id_tvtime_import` mediumint(8) unsigned NOT NULL,
+  `id_user_import` mediumint(8) unsigned NOT NULL,
   `movie_name` varchar(255) NOT NULL,
   `expected_year` varchar(4) DEFAULT NULL,
   -- the same per-entry data Processor::processMovies() would otherwise
@@ -904,7 +907,7 @@ CREATE TABLE `user_movie_pending` (
   -- still-unresolved title updates this row in place instead of piling up
   -- duplicates
   UNIQUE KEY `id_user_movie_name` (`id_user`, `movie_name`),
-  KEY `id_tvtime_import` (`id_tvtime_import`)
+  KEY `id_user_import` (`id_user_import`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
@@ -924,7 +927,7 @@ DROP TABLE IF EXISTS `user_serie_pending`;
 CREATE TABLE `user_serie_pending` (
   `id_user_serie_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
-  `id_tvtime_import` mediumint(8) unsigned NOT NULL,
+  `id_user_import` mediumint(8) unsigned NOT NULL,
   `show_name` varchar(255) NOT NULL,
   `watch_later` tinyint(1) NOT NULL DEFAULT 0,
   `stopped_watching` tinyint(1) NOT NULL DEFAULT 0,
@@ -945,7 +948,7 @@ CREATE TABLE `user_serie_pending` (
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_serie_pending`) USING BTREE,
   UNIQUE KEY `id_user_show_name` (`id_user`, `show_name`),
-  KEY `id_tvtime_import` (`id_tvtime_import`)
+  KEY `id_user_import` (`id_user_import`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------

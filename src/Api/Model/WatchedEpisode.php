@@ -79,7 +79,7 @@ class WatchedEpisode extends Model
         $sql    = '
             SELECT COUNT(*) AS cnt
             FROM user_episode_watched
-            WHERE id_user = :id_user AND id_episode = :id_episode AND id_tvtime_import IS NOT NULL
+            WHERE id_user = :id_user AND id_episode = :id_episode AND id_user_import IS NOT NULL
         ';
         $params = array(
             'id_user'    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
@@ -130,14 +130,14 @@ class WatchedEpisode extends Model
     private function insertWatch(int $idUser, int $idEpisode, ?string $watchedAt, ?int $idTvtimeImport = null): void
     {
         $sql    = '
-            INSERT INTO user_episode_watched (id_user, id_episode, watched_at, id_tvtime_import)
-            VALUES (:id_user, :id_episode, :watched_at, :id_tvtime_import)
+            INSERT INTO user_episode_watched (id_user, id_episode, watched_at, id_user_import)
+            VALUES (:id_user, :id_episode, :watched_at, :id_user_import)
         ';
         $params = array(
             'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
             'id_episode'       => array('value' => $idEpisode, 'type' => PDO::PARAM_INT),
             'watched_at'       => array('value' => $watchedAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
-            'id_tvtime_import' => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
+            'id_user_import' => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
         );
         $this->mysql->query($sql, $params);
     }

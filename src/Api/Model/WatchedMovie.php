@@ -14,7 +14,7 @@ class WatchedMovie extends Model
      * WatchedEpisode::markWatched(), collapsed to a single entity since a
      * movie has no episodes of its own. Deliberately never tags the row
      * with an import id, same reasoning as WatchedEpisode::markWatched()'s
-     * own docblock - keeps id_tvtime_import IS NOT NULL meaning exactly
+     * own docblock - keeps id_user_import IS NOT NULL meaning exactly
      * "a syncRewatchFromImport()-inserted row" and nothing else, on both
      * tables consistently
      */
@@ -65,7 +65,7 @@ class WatchedMovie extends Model
             SELECT 1
             FROM user_movie_watched
             WHERE id_user = :id_user AND id_movie = :id_movie
-              AND watched_at = :watched_at AND id_tvtime_import IS NOT NULL
+              AND watched_at = :watched_at AND id_user_import IS NOT NULL
             LIMIT 1
         ';
         $params = array(
@@ -166,14 +166,14 @@ class WatchedMovie extends Model
     private function insertWatch(int $idUser, int $idMovie, ?string $watchedAt, ?int $idTvtimeImport = null): void
     {
         $sql    = '
-            INSERT INTO user_movie_watched (id_user, id_movie, watched_at, id_tvtime_import)
-            VALUES (:id_user, :id_movie, :watched_at, :id_tvtime_import)
+            INSERT INTO user_movie_watched (id_user, id_movie, watched_at, id_user_import)
+            VALUES (:id_user, :id_movie, :watched_at, :id_user_import)
         ';
         $params = array(
             'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
             'id_movie'         => array('value' => $idMovie, 'type' => PDO::PARAM_INT),
             'watched_at'       => array('value' => $watchedAt ?? date('Y-m-d H:i:s'), 'type' => PDO::PARAM_STR),
-            'id_tvtime_import' => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
+            'id_user_import' => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
         );
         $this->mysql->query($sql, $params);
     }

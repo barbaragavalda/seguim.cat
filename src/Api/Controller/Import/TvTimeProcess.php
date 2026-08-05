@@ -72,7 +72,7 @@ class TvTimeProcess extends Controller
             return;
         }
 
-        $id       = (int) $job['id_tvtime_import'];
+        $id       = (int) $job['id_user_import'];
         $finished = (new JobRunner($this->client))->processOneBatch($job);
 
         $this->assign('processed', true);

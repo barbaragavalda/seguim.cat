@@ -39,9 +39,9 @@ class TvTimeCurrent extends Controller
         }
 
         (new JobRunner($this->client))->processOneBatch($job);
-        $job = $importModel->findForUser((int) $job['id_tvtime_import'], $this->user->getID());
+        $job = $importModel->findForUser((int) $job['id_user_import'], $this->user->getID());
 
-        $this->assign('id', (int) $job['id_tvtime_import']);
+        $this->assign('id', (int) $job['id_user_import']);
         $this->assign('status', $job['status']);
         $this->assign('summary', $job['summary'] !== null ? json_decode($job['summary'], true) : null);
         $this->assign('error_message', $job['error']);
