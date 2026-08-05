@@ -6,10 +6,8 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * age ratings (e.g. "PG-13") are country-specific, not language-specific -
- * TheTVDB ties each one to a `country`, not a language, so there's no
- * *_lang table here either (the same reasoning as MovieGenre/MovieCast:
- * nothing here has an actual per-language translation to sync).
+ * a plain join table against Api\Model\ContentRating - see that class' own
+ * docblock for why country/rating/description live there instead of here
  */
 class MovieContentRating extends Model
 {
@@ -17,7 +15,9 @@ class MovieContentRating extends Model
     public function syncForMovie(int $idMovie, array $contentRatings): void
     {
         $this->deleteForMovie($idMovie);
+        $ratingModel = new ContentRating();
         foreach ($contentRatings as $rating) {
+            $ratingModel->upsert($rating);
             $this->insert($idMovie, $rating);
         }
     }
@@ -30,10 +30,11 @@ class MovieContentRating extends Model
     public function bestForCountry(int $idMovie, ?string $country): ?array
     {
         $sql    = '
-            SELECT country, rating, description
-            FROM movie_content_rating
-            WHERE id_movie = :id_movie
-            ORDER BY (country = :country) DESC, id_movie_content_rating
+            SELECT cr.country, cr.rating, cr.description
+            FROM movie_content_rating mcr
+            INNER JOIN content_rating cr ON cr.tvdb_rating_id = mcr.tvdb_rating_id
+            WHERE mcr.id_movie = :id_movie
+            ORDER BY (cr.country = :country) DESC, mcr.id_movie_content_rating
             LIMIT 1
         ';
         $params = array(
@@ -59,15 +60,12 @@ class MovieContentRating extends Model
             return;
         }
         $sql    = '
-            INSERT INTO movie_content_rating (id_movie, tvdb_rating_id, country, rating, description)
-            VALUES (:id_movie, :tvdb_rating_id, :country, :rating, :description)
+            INSERT INTO movie_content_rating (id_movie, tvdb_rating_id)
+            VALUES (:id_movie, :tvdb_rating_id)
         ';
         $params = array(
             'id_movie'       => array('value' => $idMovie, 'type' => PDO::PARAM_INT),
             'tvdb_rating_id' => array('value' => $rating['id'], 'type' => PDO::PARAM_INT),
-            'country'        => array('value' => $rating['country'] ?? null, 'type' => PDO::PARAM_STR),
-            'rating'         => array('value' => $rating['name'] ?? null, 'type' => PDO::PARAM_STR),
-            'description'    => array('value' => $rating['description'] ?? null, 'type' => PDO::PARAM_STR),
         );
         $this->mysql->query($sql, $params);
     }

@@ -680,10 +680,25 @@ CREATE TABLE `movie_genre` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
+-- Table structure for person (a cast member's own identity - shared across
+-- every movie/series they appear in, same tvdb_people_id, confirmed
+-- empirically - unlike their character name/sort order, which are specific
+-- to one production and stay on movie_cast itself. Name has no per-
+-- language translation in practice)
+-- ----------------------------
+DROP TABLE IF EXISTS `person`;
+CREATE TABLE `person` (
+  `tvdb_people_id` int(10) unsigned NOT NULL,
+  `name` varchar(255) DEFAULT NULL,
+  `image` varchar(500) DEFAULT NULL,
+  PRIMARY KEY (`tvdb_people_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
 -- Table structure for movie_cast (top-billed cast, peopleType === 'Actor'
--- rows only from TheTVDB's `characters` array - the rest are crew. Person/
--- character names have no per-language translation in practice, same
--- reasoning as movie_genre)
+-- rows only from TheTVDB's `characters` array - the rest are crew. A plain
+-- join table against `person` for the person's own identity - see that
+-- table's own comment for why)
 -- ----------------------------
 DROP TABLE IF EXISTS `movie_cast`;
 CREATE TABLE `movie_cast` (
@@ -691,9 +706,7 @@ CREATE TABLE `movie_cast` (
   `id_movie` mediumint(8) unsigned NOT NULL,
   `tvdb_character_id` int(10) unsigned NOT NULL,
   `tvdb_people_id` int(10) unsigned DEFAULT NULL,
-  `person_name` varchar(255) DEFAULT NULL,
   `character_name` varchar(255) DEFAULT NULL,
-  `image` varchar(500) DEFAULT NULL,
   `sort_order` smallint(5) unsigned DEFAULT NULL,
   PRIMARY KEY (`id_movie_cast`) USING BTREE,
   UNIQUE KEY `id_movie_character` (`id_movie`, `tvdb_character_id`),
@@ -701,21 +714,32 @@ CREATE TABLE `movie_cast` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
--- Table structure for movie_content_rating (age ratings are country-
--- specific, not language-specific - TheTVDB ties each one to a `country`,
--- not a language - so there's no *_lang table here either)
+-- Table structure for content_rating (TheTVDB's own content-rating catalog
+-- - age ratings (e.g. "PG-13") are country-specific, not language-specific,
+-- but still a global, stable, shared catalog keyed by tvdb_rating_id - same
+-- reasoning as `genre`, just per (country, rating) pair)
+-- ----------------------------
+DROP TABLE IF EXISTS `content_rating`;
+CREATE TABLE `content_rating` (
+  `tvdb_rating_id` int(10) unsigned NOT NULL,
+  `country` char(3) DEFAULT NULL,
+  `rating` varchar(20) DEFAULT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`tvdb_rating_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for movie_content_rating (a plain join table against
+-- `content_rating` - see that table's own comment for why country/rating/
+-- description live there instead of here)
 -- ----------------------------
 DROP TABLE IF EXISTS `movie_content_rating`;
 CREATE TABLE `movie_content_rating` (
   `id_movie_content_rating` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_movie` mediumint(8) unsigned NOT NULL,
   `tvdb_rating_id` int(10) unsigned NOT NULL,
-  `country` char(3) DEFAULT NULL,
-  `rating` varchar(20) DEFAULT NULL,
-  `description` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id_movie_content_rating`) USING BTREE,
-  UNIQUE KEY `id_movie_rating` (`id_movie`, `tvdb_rating_id`),
-  KEY `id_movie_country` (`id_movie`, `country`)
+  UNIQUE KEY `id_movie_rating` (`id_movie`, `tvdb_rating_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
