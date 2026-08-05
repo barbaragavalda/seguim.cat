@@ -16,7 +16,7 @@ use Core\Routing\Attribute\Route;
 class Index extends Controller
 {
 
-    private const array VALID_STATUSES = array('all', 'removed', 'archived', 'watching', 'not_started', 'finished');
+    private const array VALID_STATUSES = array('all', 'removed', 'archived', 'watching', 'not_started', 'finished', 'finished_pending');
 
     protected function run(): void
     {

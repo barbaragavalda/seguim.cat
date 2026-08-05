@@ -296,22 +296,26 @@ class Watchlist extends Model
         return $this->finalizePage($rows, $idUser, $idAppacmanLang);
     }
 
-    private const array STATUSES = array('all', 'removed', 'archived', 'watching', 'not_started', 'finished');
+    private const array STATUSES = array('all', 'removed', 'archived', 'watching', 'not_started', 'finished', 'finished_pending');
 
     /**
      * unified, paginated "browse everything" view (for a profile-style
      * screen) - unlike listWatching()/listNotStarted() above, every status
      * here is paginated, since archived/removed/finished can easily
-     * accumulate hundreds of rows (a TV Time import commonly does). The 5
-     * non-`all` statuses partition every possible (archived, removed,
-     * watched vs. remaining) combination exactly once - `removed` wins over
-     * `archived` when a series is somehow flagged as both (confirmed with
-     * the user: "removed" is the more definitive state). `all` is the 6th,
-     * unfiltered status - every row in the user's watchlist regardless of
-     * those flags, same ordering (`w.created DESC`) as the others. $search,
-     * when given, further filters by title (translated name, falling back
-     * to default_name same as everywhere else) - a simple `LIKE`, no
-     * full-text index, matching this app's personal-tracker scale
+     * accumulate hundreds of rows (a TV Time import commonly does). 5 of the
+     * non-`all` statuses (removed/archived/not_started/watching/finished)
+     * partition every possible (archived, removed, watched vs. remaining)
+     * combination exactly once - `removed` wins over `archived` when a
+     * series is somehow flagged as both (confirmed with the user: "removed"
+     * is the more definitive state). `finished_pending` is not part of that
+     * partition - it's a subset of `finished` (every finished_pending row
+     * is also finished), for a series whose finale is watched but has an
+     * earlier gap - see $hasUnwatchedAired's own docblock. `all` is
+     * unfiltered - every row in the user's watchlist regardless of those
+     * flags, same ordering (`w.created DESC`) as the others. $search, when
+     * given, further filters by title (translated name, falling back to
+     * default_name same as everywhere else) - a simple `LIKE`, no full-text
+     * index, matching this app's personal-tracker scale
      *
      * @return array{results: array, hasMore: bool}
      */
@@ -349,6 +353,29 @@ class Watchlist extends Model
                 FROM user_episode_watched uew2
                 INNER JOIN episode e2 ON e2.id_episode = uew2.id_episode
                 WHERE uew2.id_user = w.id_user AND e2.id_serie = s.id_serie
+            )
+        ';
+        // an aired episode still unwatched - combined with $watchedLastEpisode
+        // below, this can only be an earlier gap (the finale itself is
+        // guaranteed watched), which is exactly what "finished_pending"
+        // means: confirmed with the user that this is a separate, additional
+        // status alongside "finished" (every finished_pending row is also
+        // finished - see that status' own definition just above), not a
+        // replacement definition of it. Deliberately NOT season_number > 0
+        // only, unlike $watchedLastEpisode/remainingEpisodes() elsewhere - an
+        // unwatched special counts as "pending" here too (confirmed with the
+        // user), even though it never decides "finished" itself
+        $hasUnwatchedAired = '
+            EXISTS (
+                SELECT 1
+                FROM episode e4
+                WHERE e4.id_serie = s.id_serie
+                  AND e4.aired IS NOT NULL AND e4.aired <= CURDATE()
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM user_episode_watched uew4
+                      WHERE uew4.id_user = w.id_user AND uew4.id_episode = e4.id_episode
+                  )
             )
         ';
         $searchCondition = $search !== null && $search !== ''
@@ -413,6 +440,22 @@ class Watchlist extends Model
                 LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
                 WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 0
                   AND ' . $hasWatched . ' AND ' . $watchedLastEpisode . $searchCondition . '
+                ORDER BY (
+                    SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3
+                    INNER JOIN episode e3 ON e3.id_episode = uew3.id_episode
+                    WHERE uew3.id_user = w.id_user AND e3.id_serie = s.id_serie
+                ) DESC
+                LIMIT :limit OFFSET :offset
+            ',
+            // a subset of 'finished' above, not a different definition of
+            // it - see $hasUnwatchedAired's own docblock
+            'finished_pending' => '
+                SELECT s.*, sl.name, sl.overview
+                FROM user_serie_watchlist w
+                INNER JOIN serie s ON s.id_serie = w.id_serie
+                LEFT JOIN serie_lang sl ON sl.id_serie = s.id_serie AND sl.id_appacman_lang = :id_appacman_lang
+                WHERE w.id_user = :id_user AND w.stopped_watching = 0 AND w.watch_later = 0
+                  AND ' . $watchedLastEpisode . ' AND ' . $hasUnwatchedAired . $searchCondition . '
                 ORDER BY (
                     SELECT MAX(uew3.watched_at) FROM user_episode_watched uew3
                     INNER JOIN episode e3 ON e3.id_episode = uew3.id_episode
