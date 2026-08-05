@@ -109,9 +109,18 @@ class Client
         );
     }
 
+    /**
+     * /extended, not the base /series/{id} - needed for `genres` (confirmed
+     * empirically absent from the base record, same as a movie's own base
+     * record). Everything else Series::upsert() reads (name/slug/image/
+     * firstAired/lastAired/averageRuntime/status) is present in the exact
+     * same shape on both, confirmed empirically - unlike getMovie(), no
+     * extra background/overview request is needed here since a series'
+     * /extended response already includes both directly
+     */
     public function getSeries(int $tvdbId): array
     {
-        $response = $this->request('GET', '/series/' . $tvdbId);
+        $response = $this->request('GET', '/series/' . $tvdbId . '/extended');
         return $response['data'] ?? array();
     }
 

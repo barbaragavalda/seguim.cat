@@ -6,6 +6,7 @@ use Api\Controller\Controller;
 use Api\Model\Episode;
 use Api\Model\EpisodeLang;
 use Api\Model\Series as SeriesModel;
+use Api\Model\SerieGenre;
 use Api\Model\SerieLang;
 use Api\Model\TheTvdb\Client;
 use Api\Model\WatchedEpisode;
@@ -74,6 +75,11 @@ class Detail extends Controller
         $translation      = (new SerieLang())->syncForLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
         $info['name']     = $translation['name'] ?: $info['default_name'];
         $info['overview'] = $translation['overview'] ?: $info['default_overview'];
+
+        // no per-language text of its own to fall back on - see
+        // SerieGenre's own docblock for why; only genre labels vary by
+        // culture, and that's handled client-side (l10n by slug), not here
+        $info['genres'] = (new SerieGenre())->forSerie($info['id_serie']);
 
         // same default_name/default_overview fallback as the series itself
         // above, per episode

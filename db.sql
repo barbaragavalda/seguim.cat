@@ -516,6 +516,22 @@ CREATE TABLE `serie_lang` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
+-- Table structure for serie_genre (counterpart of movie_genre - same
+-- reasoning: TheTVDB's genre taxonomy has no per-language translation, so
+-- `slug` is stored for the app to localize the label itself client-side,
+-- falling back to the raw English `name` for a slug it doesn't have a
+-- translation for yet; full replace each series sync cycle)
+-- ----------------------------
+DROP TABLE IF EXISTS `serie_genre`;
+CREATE TABLE `serie_genre` (
+  `id_serie` mediumint(8) unsigned NOT NULL,
+  `tvdb_genre_id` smallint(5) unsigned NOT NULL,
+  `slug` varchar(100) DEFAULT NULL,
+  `name` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`id_serie`, `tvdb_genre_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
 -- Table structure for episode (local lazy mirror of TheTVDB episodes)
 -- ----------------------------
 DROP TABLE IF EXISTS `episode`;
