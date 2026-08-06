@@ -24,6 +24,16 @@ class Watch extends Controller
             return;
         }
 
+        // server-side backstop for the same rule the app's own UI already
+        // enforces (an unaired episode's watched-toggle isn't even
+        // tappable there) - this endpoint is a real request boundary, so it
+        // shouldn't just trust that every caller goes through that UI
+        $aired = $episode->getInfo()['aired'] ?? null;
+        if ($aired === null || $aired > date('Y-m-d')) {
+            $this->error = 'This episode has not aired yet.';
+            return;
+        }
+
         $watchlist = new Watchlist();
         $idSerie   = $episode->getInfo()['id_serie'];
 
