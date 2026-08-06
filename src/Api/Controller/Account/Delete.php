@@ -9,6 +9,7 @@ use Api\Model\MovieWatchlist;
 use Api\Model\SerieFavorite;
 use Api\Model\SeriesImportPending;
 use Api\Model\TvTimeImport;
+use Api\Model\UserGoogle;
 use Api\Model\UserList;
 use Api\Model\WatchedEpisode;
 use Api\Model\WatchedMovie;
@@ -46,6 +47,7 @@ class Delete extends Controller
         (new UserList())->removeAllForUser($userID);
         (new SerieFavorite())->removeAllForUser($userID);
         (new MovieFavorite())->removeAllForUser($userID);
+        (new UserGoogle())->removeAllForUser($userID);
         (new EmailChange())->deleteForUser($userID);
         (new User())->delete($userID);
     }

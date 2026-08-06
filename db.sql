@@ -448,6 +448,24 @@ CREATE TABLE `user_token` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
+-- Table structure for user_google (links a `user` row to the Google account
+-- it signed in with - Api\Model\UserGoogle, Api\Controller\Login\Google.
+-- One row per user: this app only supports linking a single Google account,
+-- there's no UI to link/unlink beyond delete-account. `google_id` is the
+-- verified ID token's `sub` claim, Google's own stable, unique identifier
+-- for that account - never the email, which a user could change on Google's
+-- side independently of this table
+-- ----------------------------
+DROP TABLE IF EXISTS `user_google`;
+CREATE TABLE `user_google` (
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `google_id` varchar(255) NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user`) USING BTREE,
+  UNIQUE KEY `google_id` (`google_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
 -- Table structure for serie (local lazy mirror of TheTVDB series)
 -- ----------------------------
 DROP TABLE IF EXISTS `serie`;
