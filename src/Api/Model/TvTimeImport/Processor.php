@@ -547,6 +547,23 @@ final class Processor
                 $listMoviesPending++;
             }
 
+            // recovers the movies Parser::parseListMeta() found via list
+            // preview artwork but couldn't tie to a specific uuid/name (see
+            // that method's own docblock) - a direct tvdb-id sync, same as
+            // list series' own primary path just above, since there's no
+            // ambiguity left to resolve here. UserListMovie::add() is a
+            // no-op if $movieName's own match above already added this
+            // exact movie, so this can't create a duplicate list entry.
+            // No per-item added_at survives this recovery path, so the
+            // list's own created_at is the closest available date
+            foreach ($list['preview_movie_ids'] as $tvdbMovieId) {
+                $info = (new Movie())->sync($tvdbMovieId, $this->client);
+                if (!empty($info)) {
+                    $userListMovie->add($idUserList, $info['id_movie'], $list['created_at']);
+                    $listMoviesAdded++;
+                }
+            }
+
             $listsCreated++;
             $doneListKeys[] = $sKey;
         }

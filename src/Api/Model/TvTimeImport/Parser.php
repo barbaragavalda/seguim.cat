@@ -511,7 +511,17 @@ final class Parser
                     }
                 }
             }
-            if (empty($series) && empty($movies)) {
+            // a movie-only list whose every movie was only ever added via
+            // the list itself (never followed/watched/to-watched on its
+            // own) has no uuid->name path at all (see parseMovieUuidNames()'
+            // own docblock) - $previewMovieIds is that list's one other
+            // lead (see parseListMeta()'s own docblock), so a list isn't
+            // dropped just because $movies came up empty when there's still
+            // something recoverable there. Confirmed happening for real:
+            // several genuinely non-empty movie-only lists (an actor's
+            // filmography, a franchise, a "pending movies" list) were
+            // silently vanishing on import for exactly this reason
+            if (empty($series) && empty($movies) && empty($previewMovieIds[$sKey] ?? array())) {
                 continue;
             }
 
