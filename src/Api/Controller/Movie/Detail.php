@@ -6,6 +6,7 @@ use Api\Controller\Controller;
 use Api\Model\Movie as MovieModel;
 use Api\Model\MovieCast;
 use Api\Model\MovieContentRating;
+use Api\Model\MovieFavorite;
 use Api\Model\MovieGenre;
 use Api\Model\MovieLang;
 use Api\Model\MovieTrailer;
@@ -80,11 +81,17 @@ class Detail extends Controller
         $watchCount  = $this->user !== null
             ? (new WatchedMovie())->watchCount($this->user->getID(), $info['id_movie'])
             : 0;
+        // independent of the watchlist flag above - see Series\Detail's own
+        // comment, identical reasoning
+        $isFavorite  = $this->user !== null
+            ? (new MovieFavorite())->has($this->user->getID(), $info['id_movie'])
+            : false;
 
         $this->assign('movie', $info);
         $this->assign('in_watchlist', $inWatchlist);
         $this->assign('watched', $watchCount > 0);
         $this->assign('watch_count', $watchCount);
+        $this->assign('is_favorite', $isFavorite);
     }
 
 }

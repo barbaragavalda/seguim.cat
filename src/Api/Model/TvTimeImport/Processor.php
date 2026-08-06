@@ -4,9 +4,11 @@ namespace Api\Model\TvTimeImport;
 
 use Api\Model\Episode;
 use Api\Model\Movie;
+use Api\Model\MovieFavorite;
 use Api\Model\MovieImportPending;
 use Api\Model\MovieWatchlist;
 use Api\Model\Series;
+use Api\Model\SerieFavorite;
 use Api\Model\SeriesImportPending;
 use Api\Model\TheTvdb\Client;
 use Api\Model\TheTvdb\Languages;
@@ -480,6 +482,19 @@ final class Processor
                 break;
             }
 
+            // TV Time's own built-in "Favorite Shows"/"Favorite Movies"
+            // lists (fixed s_keys, confirmed present in every export)
+            // aren't a real user-created list at all - Series\Detail/
+            // Movie\Detail's own heart toggle is what this app calls
+            // favoriting instead, so these route straight to
+            // SerieFavorite/MovieFavorite rather than creating a UserList
+            // (see those classes' own docblocks)
+            if ($sKey === 'favorite-series' || $sKey === 'favorite-movies') {
+                $this->processFavoritesList($idUser, $list, $parsed, $seriesMatcher, $movieMatcher);
+                $doneListKeys[] = $sKey;
+                continue;
+            }
+
             // reuses the same list a previous, separate import job already
             // created for this exact TV Time list (matched via its own
             // stable s_key, not its name - see UserList::findByTvtimeKey()'s
@@ -569,6 +584,57 @@ final class Processor
         }
 
         return array($doneListKeys, $listsCreated, $listSeriesAdded, $listMoviesAdded, $listSeriesPending, $listMoviesPending, $finished);
+    }
+
+    /**
+     * TV Time's "Favorite Shows"/"Favorite Movies" list, routed to
+     * SerieFavorite/MovieFavorite instead of a real UserList - see
+     * processLists()'s own call site for why. Same direct-id-then-name-
+     * search recovery as a regular list's own series (resolveListSeriesByName())
+     * and the same preview_movie_ids artwork recovery as a regular list's
+     * own movies, but deliberately with no further pending-resolution
+     * fallback of its own: unlike a real list, there's no separate screen a
+     * user would visit to resolve "some of my favorites" - an item that
+     * can't be resolved here is simply not favorited, rather than adding a
+     * whole parallel pending-favorite concept for what's typically a
+     * short, already-well-known-titles list
+     */
+    private function processFavoritesList(int $idUser, array $list, array $parsed, SeriesMatcher $seriesMatcher, MovieMatcher $movieMatcher): void
+    {
+        $serieFavorite = new SerieFavorite();
+        $movieFavorite = new MovieFavorite();
+
+        foreach ($list['series'] as $tvdbSeriesId => $addedAt) {
+            $info = (new Series())->sync($tvdbSeriesId, $this->client);
+            if (empty($info)) {
+                $showName = $parsed['show_names'][$tvdbSeriesId] ?? null;
+                $result   = $showName !== null ? $seriesMatcher->match($showName) : null;
+                $info     = $result !== null && $result['status'] === 'matched'
+                    ? (new Series())->sync($result['tvdb_id'], $this->client)
+                    : array();
+            }
+            if (!empty($info)) {
+                $serieFavorite->addFromImport($idUser, $info['id_serie'], $addedAt);
+            }
+        }
+
+        foreach ($list['movies'] as $movieName => $addedAt) {
+            $expectedYear = $parsed['movies'][$movieName]['expected_year'] ?? null;
+            $result       = $movieMatcher->match($movieName, $expectedYear);
+            if ($result['status'] === 'matched') {
+                $info = (new Movie())->sync($result['tvdb_id'], $this->client);
+                if (!empty($info)) {
+                    $movieFavorite->addFromImport($idUser, $info['id_movie'], $addedAt);
+                }
+            }
+        }
+
+        foreach ($list['preview_movie_ids'] as $tvdbMovieId) {
+            $info = (new Movie())->sync($tvdbMovieId, $this->client);
+            if (!empty($info)) {
+                $movieFavorite->addFromImport($idUser, $info['id_movie']);
+            }
+        }
     }
 
     /**

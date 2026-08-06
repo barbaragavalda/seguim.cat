@@ -777,6 +777,24 @@ CREATE TABLE `user_movie_watchlist` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
+-- Table structure for user_movie_favorite - independent of
+-- user_movie_watchlist membership (Movie\Detail's own heart toggle works
+-- whether or not the movie is being tracked), unlike TV Time's own export
+-- "Favorite Movies"/"Favorite Shows" lists, which used to get imported as
+-- regular Api\Model\UserList rows - Api\Model\TvTimeImport\Processor now
+-- routes their members here instead (see its own docblock on why they
+-- aren't real user-created lists)
+-- ----------------------------
+DROP TABLE IF EXISTS `user_movie_favorite`;
+CREATE TABLE `user_movie_favorite` (
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_movie` mediumint(8) unsigned NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_user`, `id_movie`) USING BTREE,
+  KEY `id_movie` (`id_movie`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
 -- Table structure for user_movie_watched (one row per watch event, not per
 -- movie - same "rewatch adds a row rather than updating" shape as
 -- user_episode_watched, so watch count/history survives)
@@ -818,6 +836,19 @@ CREATE TABLE `user_serie_watchlist` (
   -- for exactly this. Regular Watchlist::add() always leaves both at 0.
   `watch_later` tinyint(1) unsigned NOT NULL DEFAULT 0,
   `stopped_watching` tinyint(1) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id_user`, `id_serie`) USING BTREE,
+  KEY `id_serie` (`id_serie`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------
+-- Table structure for user_serie_favorite - see user_movie_favorite's own
+-- comment just above, identical shape and reasoning
+-- ----------------------------
+DROP TABLE IF EXISTS `user_serie_favorite`;
+CREATE TABLE `user_serie_favorite` (
+  `id_user` mediumint(8) unsigned NOT NULL,
+  `id_serie` mediumint(8) unsigned NOT NULL,
+  `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user`, `id_serie`) USING BTREE,
   KEY `id_serie` (`id_serie`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

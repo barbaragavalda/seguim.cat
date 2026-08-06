@@ -6,6 +6,7 @@ use Api\Controller\Controller;
 use Api\Model\Episode;
 use Api\Model\EpisodeLang;
 use Api\Model\Series as SeriesModel;
+use Api\Model\SerieFavorite;
 use Api\Model\SerieGenre;
 use Api\Model\SerieLang;
 use Api\Model\SerieTrailer;
@@ -104,11 +105,18 @@ class Detail extends Controller
             ? (new Watchlist())->getFlags($this->user->getID(), $info['id_serie'])
             : array('inWatchlist' => false, 'archived' => false, 'removed' => false);
 
+        // independent of the watchlist flags above - see SerieFavorite's
+        // own docblock on why favoriting doesn't require tracking first
+        $isFavorite = $this->user !== null
+            ? (new SerieFavorite())->has($this->user->getID(), $info['id_serie'])
+            : false;
+
         $this->assign('series', $info);
         $this->assign('episodes', $episodeRows);
         $this->assign('in_watchlist', $flags['inWatchlist']);
         $this->assign('archived', $flags['archived']);
         $this->assign('removed', $flags['removed']);
+        $this->assign('is_favorite', $isFavorite);
     }
 
 }

@@ -3,8 +3,10 @@
 namespace Api\Controller\Account;
 
 use Api\Controller\Controller;
+use Api\Model\MovieFavorite;
 use Api\Model\MovieImportPending;
 use Api\Model\MovieWatchlist;
+use Api\Model\SerieFavorite;
 use Api\Model\SeriesImportPending;
 use Api\Model\TvTimeImport;
 use Api\Model\UserList;
@@ -42,6 +44,8 @@ class Delete extends Controller
         (new SeriesImportPending())->removeAllForUser($userID);
         (new TvTimeImport())->removeAllForUser($userID);
         (new UserList())->removeAllForUser($userID);
+        (new SerieFavorite())->removeAllForUser($userID);
+        (new MovieFavorite())->removeAllForUser($userID);
         (new EmailChange())->deleteForUser($userID);
         (new User())->delete($userID);
     }
