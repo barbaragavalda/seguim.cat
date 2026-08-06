@@ -117,6 +117,42 @@ class UserListSerie extends Model
         return array('results' => array_slice($rows, 0, self::PAGE_SIZE), 'hasMore' => $hasMore);
     }
 
+    public function countForList(int $idUserList): int
+    {
+        $sql    = '
+            SELECT COUNT(*) AS cnt
+            FROM user_list_serie
+            WHERE id_user_list = :id_user_list
+        ';
+        $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
+        return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
+    }
+
+    /**
+     * the first $limit series of this list, in its own manual order - for
+     * Lists\Index's own small poster-thumbnail preview (Api\Model\
+     * UserListMovie::previewForList()'s own docblock explains why series
+     * and movies aren't merged into one combined-by-date preview)
+     *
+     * @return array<int, array{tvdb_id: int, image: ?string}>
+     */
+    public function previewForList(int $idUserList, int $limit): array
+    {
+        $sql    = '
+            SELECT s.tvdb_id, s.image
+            FROM user_list_serie uls
+            INNER JOIN serie s ON s.id_serie = uls.id_serie
+            WHERE uls.id_user_list = :id_user_list
+            ORDER BY uls.ordering ASC
+            LIMIT :limit
+        ';
+        $params = array(
+            'id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT),
+            'limit'        => array('value' => $limit, 'type' => PDO::PARAM_INT),
+        );
+        return $this->mysql->query($sql, $params);
+    }
+
     /**
      * moves $idSerie to be right after $afterIdSerie within $idUserList, or
      * to the front if $afterIdSerie is null - same pagination-safe

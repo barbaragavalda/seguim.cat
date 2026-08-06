@@ -118,6 +118,47 @@ class UserListMovie extends Model
         return array('results' => array_slice($rows, 0, self::PAGE_SIZE), 'hasMore' => $hasMore);
     }
 
+    public function countForList(int $idUserList): int
+    {
+        $sql    = '
+            SELECT COUNT(*) AS cnt
+            FROM user_list_movie
+            WHERE id_user_list = :id_user_list
+        ';
+        $params = array('id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT));
+        return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
+    }
+
+    /**
+     * the first $limit movies of this list, in its own manual order - used
+     * by Lists\Index to top up its poster-thumbnail preview once a list's
+     * own series (UserListSerie::previewForList(), tried first) don't fill
+     * it on their own. Not merged into one single by-date-added query
+     * across both tables: series and movies keep fully independent manual
+     * orderings (drag-and-drop reordering, own `ordering` column each), so
+     * there's no one shared "position" to sort a combined preview by
+     * without picking a different, disconnected-from-the-drag-handle
+     * ordering the user never actually set
+     *
+     * @return array<int, array{tvdb_id: int, image: ?string}>
+     */
+    public function previewForList(int $idUserList, int $limit): array
+    {
+        $sql    = '
+            SELECT m.tvdb_id, m.image
+            FROM user_list_movie ulm
+            INNER JOIN movie m ON m.id_movie = ulm.id_movie
+            WHERE ulm.id_user_list = :id_user_list
+            ORDER BY ulm.ordering ASC
+            LIMIT :limit
+        ';
+        $params = array(
+            'id_user_list' => array('value' => $idUserList, 'type' => PDO::PARAM_INT),
+            'limit'        => array('value' => $limit, 'type' => PDO::PARAM_INT),
+        );
+        return $this->mysql->query($sql, $params);
+    }
+
     /**
      * moves $idMovie to be right after $afterIdMovie within $idUserList, or
      * to the front if $afterIdMovie is null - same pagination-safe
