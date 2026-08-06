@@ -35,16 +35,19 @@ class TvTimeImport extends Model
      * Called from Api\Controller\Account\Delete (a job's zip/extracted
      * files would otherwise be left orphaned on disk once the account is
      * gone) and from Api\Controller\Import\TvTime, right before starting a
-     * fresh import - without this, an old job (done, failed, or abandoned
-     * mid-way) and whatever it left behind (user_movie_pending/
-     * user_serie_pending rows tied to it, tagged rewatch rows via
-     * WatchedEpisode::syncRewatchesFromImport()) just piles up: confirmed
-     * live this session, repeatedly, as stray pending-resolution rows
-     * surviving a manual cleanup that only touched user_import itself.
-     * Deliberately doesn't touch user_serie_watchlist/user_episode_watched/
-     * user_movie_watchlist/user_movie_watched/user_list - those are the
-     * user's real, earned watch history from a *previous* import, not this
-     * job-tracking bookkeeping, and must survive a fresh re-import.
+     * fresh import - without this, an old job's own zip/extracted files
+     * just pile up on disk forever. Only ever touches user_import itself
+     * and its files - deliberately NOT user_movie_pending/user_serie_pending
+     * (those have no id_user_import column at all - see their own
+     * docblocks in db.sql on why a pending title has to outlive whichever
+     * job first created it, or a fresh import would re-ask the user about
+     * every title they already resolved/dismissed on a previous one -
+     * confirmed happening for real when this method used to delete them
+     * unconditionally, resolved rows included), nor user_serie_watchlist/
+     * user_episode_watched/user_movie_watchlist/user_movie_watched/
+     * user_list - those are the user's real, earned watch history from a
+     * *previous* import, not this job-tracking bookkeeping, and must
+     * survive a fresh re-import.
      */
     public function removeAllForUser(int $idUser): void
     {
@@ -70,24 +73,6 @@ class TvTimeImport extends Model
                 @rmdir($extractDir);
             }
         }
-
-        $jobIdParams  = array();
-        $placeholders = array();
-        foreach (array_values(array_column($jobs, 'id_user_import')) as $index => $jobId) {
-            $key               = 'job_id_' . $index;
-            $placeholders[]    = ':' . $key;
-            $jobIdParams[$key] = array('value' => (int) $jobId, 'type' => PDO::PARAM_INT);
-        }
-        $inClause = implode(',', $placeholders);
-
-        $this->mysql->query(
-            "DELETE FROM user_movie_pending WHERE id_user_import IN ($inClause)",
-            $jobIdParams
-        );
-        $this->mysql->query(
-            "DELETE FROM user_serie_pending WHERE id_user_import IN ($inClause)",
-            $jobIdParams
-        );
 
         $sql = '
             DELETE FROM user_import

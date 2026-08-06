@@ -947,7 +947,11 @@ DROP TABLE IF EXISTS `user_movie_pending`;
 CREATE TABLE `user_movie_pending` (
   `id_user_movie_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
-  `id_user_import` mediumint(8) unsigned NOT NULL,
+  -- deliberately NOT tied to any one user_import row (no id_user_import
+  -- column) - a pending title is a per-user, per-title thing that must
+  -- outlive whichever job first created it, so a fresh import's own
+  -- cleanup (TvTimeImport::removeAllForUser()) can safely wipe old
+  -- user_import rows without ever touching this table
   `movie_name` varchar(255) NOT NULL,
   `expected_year` varchar(4) DEFAULT NULL,
   -- the same per-entry data Processor::processMovies() would otherwise
@@ -974,8 +978,7 @@ CREATE TABLE `user_movie_pending` (
   -- re-running an import (or a second import later) that hits the same
   -- still-unresolved title updates this row in place instead of piling up
   -- duplicates
-  UNIQUE KEY `id_user_movie_name` (`id_user`, `movie_name`),
-  KEY `id_user_import` (`id_user_import`)
+  UNIQUE KEY `id_user_movie_name` (`id_user`, `movie_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------
@@ -995,7 +998,8 @@ DROP TABLE IF EXISTS `user_serie_pending`;
 CREATE TABLE `user_serie_pending` (
   `id_user_serie_pending` mediumint(8) unsigned NOT NULL AUTO_INCREMENT,
   `id_user` mediumint(8) unsigned NOT NULL,
-  `id_user_import` mediumint(8) unsigned NOT NULL,
+  -- see user_movie_pending's own comment on why this table has no
+  -- id_user_import column, identical reasoning
   `show_name` varchar(255) NOT NULL,
   `watch_later` tinyint(1) NOT NULL DEFAULT 0,
   `stopped_watching` tinyint(1) NOT NULL DEFAULT 0,
@@ -1015,8 +1019,7 @@ CREATE TABLE `user_serie_pending` (
   `resolved` tinyint(1) NOT NULL DEFAULT 0,
   `created` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_user_serie_pending`) USING BTREE,
-  UNIQUE KEY `id_user_show_name` (`id_user`, `show_name`),
-  KEY `id_user_import` (`id_user_import`)
+  UNIQUE KEY `id_user_show_name` (`id_user`, `show_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------

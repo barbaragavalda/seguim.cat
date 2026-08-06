@@ -135,7 +135,7 @@ final class Processor
         // already synced by the time shows finish anyway
         if ($showsFinished) {
             [$doneListKeys, $listsCreated, $listSeriesAdded, $listMoviesAdded, $listSeriesPending, $listMoviesPending, $listsFinished]
-                = $this->processLists($idUser, $idTvtimeImport, $parsed, $alreadyDoneLists, $deadline, $tvdbLanguageCode);
+                = $this->processLists($idUser, $parsed, $alreadyDoneLists, $deadline, $tvdbLanguageCode);
         }
 
         $doneMovieKeys   = array();
@@ -352,7 +352,7 @@ final class Processor
 
         $result = $seriesMatcher->match($showName);
         if ($result['status'] !== 'matched') {
-            $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $showName, $flags, $watchedEntries, $rewatchEntries, $result['candidates']);
+            $pendingImport->createOrUpdate($idUser, $showName, $flags, $watchedEntries, $rewatchEntries, $result['candidates']);
             return array('pending' => true, 'episodes_watched' => 0, 'episodes_rewatched' => 0);
         }
 
@@ -362,7 +362,7 @@ final class Processor
             // the match came from TheTVDB's own search a moment ago, so this
             // is a rare transient failure - still worth a pending entry
             // rather than losing the show's history outright
-            $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $showName, $flags, $watchedEntries, $rewatchEntries, array());
+            $pendingImport->createOrUpdate($idUser, $showName, $flags, $watchedEntries, $rewatchEntries, array());
             return array('pending' => true, 'episodes_watched' => 0, 'episodes_rewatched' => 0);
         }
 
@@ -453,7 +453,7 @@ final class Processor
     /**
      * @return array{0: array<string>, 1: int, 2: int, 3: int, 4: int, 5: int, 6: bool}
      */
-    private function processLists(int $idUser, int $idTvtimeImport, array $parsed, array $alreadyDone, float $deadline, string $tvdbLanguageCode): array
+    private function processLists(int $idUser, array $parsed, array $alreadyDone, float $deadline, string $tvdbLanguageCode): array
     {
         $userList            = new UserList();
         $userListSerie       = new UserListSerie();
@@ -506,7 +506,7 @@ final class Processor
                 // of "missing" list items: any show needing this recovery
                 // vanished from every list it was in, even though the show
                 // itself got fully recovered elsewhere in the same import)
-                if ($this->resolveListSeriesByName($idUser, $idTvtimeImport, $tvdbSeriesId, $parsed, $seriesMatcher, $seriesPendingImport, $userListSerie, $idUserList, $addedAt)) {
+                if ($this->resolveListSeriesByName($idUser, $tvdbSeriesId, $parsed, $seriesMatcher, $seriesPendingImport, $userListSerie, $idUserList, $addedAt)) {
                     $listSeriesAdded++;
                 } else {
                     $listSeriesPending++;
@@ -543,7 +543,7 @@ final class Processor
                     }
                 }
 
-                $this->queueListMoviePending($idUser, $idTvtimeImport, $movieName, $expectedYear, $addedAt, $result['candidates'], $parsed, $moviePendingImport, $idUserList);
+                $this->queueListMoviePending($idUser, $movieName, $expectedYear, $addedAt, $result['candidates'], $parsed, $moviePendingImport, $idUserList);
                 $listMoviesPending++;
             }
 
@@ -595,7 +595,6 @@ final class Processor
      */
     private function resolveListSeriesByName(
         int $idUser,
-        int $idTvtimeImport,
         int $tvdbSeriesId,
         array $parsed,
         SeriesMatcher $seriesMatcher,
@@ -641,7 +640,7 @@ final class Processor
         $rewatchEntries = $this->toRewatchEpisodeNumberEntries($parsed['rewatches'][$tvdbSeriesId] ?? array(), $parsed['episode_numbers'][$tvdbSeriesId] ?? array());
         $candidates     = ($result['status'] ?? null) === 'ambiguous' ? $result['candidates'] : array();
 
-        $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $showName, $flags, $watchedEntries, $rewatchEntries, $candidates);
+        $pendingImport->createOrUpdate($idUser, $showName, $flags, $watchedEntries, $rewatchEntries, $candidates);
         $pending = $pendingImport->idForShowName($idUser, $showName);
         if ($pending !== null) {
             $pendingImport->linkList($pending, $idUserList, $addedAt);
@@ -666,7 +665,6 @@ final class Processor
      */
     private function queueListMoviePending(
         int $idUser,
-        int $idTvtimeImport,
         string $movieName,
         ?string $expectedYear,
         string $addedAt,
@@ -676,7 +674,7 @@ final class Processor
         int $idUserList
     ): void {
         $entry = $parsed['movies'][$movieName] ?? array('watchlist_created_at' => null, 'watched_at' => null, 'rewatch_at' => array());
-        $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $movieName, $expectedYear, $entry, $candidates);
+        $pendingImport->createOrUpdate($idUser, $movieName, $expectedYear, $entry, $candidates);
 
         $pending = $pendingImport->idForMovieName($idUser, $movieName);
         if ($pending !== null) {
@@ -736,7 +734,6 @@ final class Processor
                 // MovieMatcher's own docblock)
                 $pendingImport->createOrUpdate(
                     $idUser,
-                    $idTvtimeImport,
                     $name,
                     $entry['expected_year'],
                     $entry,
@@ -755,7 +752,7 @@ final class Processor
                 // still worth a pending entry (with no stored candidates,
                 // since the one candidate that mattered just failed to
                 // sync) rather than losing the title outright
-                $pendingImport->createOrUpdate($idUser, $idTvtimeImport, $name, $entry['expected_year'], $entry, array());
+                $pendingImport->createOrUpdate($idUser, $name, $entry['expected_year'], $entry, array());
                 $moviesUnmatched[] = $name;
                 $moviesPending++;
                 $doneMovieKeys[]   = $key;

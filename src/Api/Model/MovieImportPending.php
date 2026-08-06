@@ -28,7 +28,6 @@ class MovieImportPending extends Model
      */
     public function createOrUpdate(
         int $idUser,
-        int $idTvtimeImport,
         string $movieName,
         ?string $expectedYear,
         array $entry,
@@ -36,18 +35,16 @@ class MovieImportPending extends Model
     ): void {
         $sql    = '
             INSERT INTO user_movie_pending
-                (id_user, id_user_import, movie_name, expected_year, watchlist_created_at, watched_at, rewatch_at, candidates)
+                (id_user, movie_name, expected_year, watchlist_created_at, watched_at, rewatch_at, candidates)
             VALUES
-                (:id_user, :id_user_import, :movie_name, :expected_year, :watchlist_created_at, :watched_at, :rewatch_at, :candidates)
+                (:id_user, :movie_name, :expected_year, :watchlist_created_at, :watched_at, :rewatch_at, :candidates)
             ON DUPLICATE KEY UPDATE
-                id_user_import = :id_user_import_upd, expected_year = :expected_year_upd,
+                expected_year = :expected_year_upd,
                 watchlist_created_at = :watchlist_created_at_upd, watched_at = :watched_at_upd,
                 rewatch_at = :rewatch_at_upd, candidates = :candidates_upd
         ';
         $params = array(
             'id_user'                  => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_user_import'         => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
-            'id_user_import_upd'     => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
             'movie_name'               => array('value' => $movieName, 'type' => PDO::PARAM_STR),
             'expected_year'            => array('value' => $expectedYear, 'type' => PDO::PARAM_STR),
             'expected_year_upd'        => array('value' => $expectedYear, 'type' => PDO::PARAM_STR),

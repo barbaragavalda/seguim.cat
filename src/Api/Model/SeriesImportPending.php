@@ -29,7 +29,6 @@ class SeriesImportPending extends Model
      */
     public function createOrUpdate(
         int $idUser,
-        int $idTvtimeImport,
         string $showName,
         array $flags,
         array $watchedEpisodes,
@@ -38,18 +37,16 @@ class SeriesImportPending extends Model
     ): void {
         $sql    = '
             INSERT INTO user_serie_pending
-                (id_user, id_user_import, show_name, watch_later, stopped_watching, watchlist_created_at, watched_episodes, rewatch_episodes, candidates)
+                (id_user, show_name, watch_later, stopped_watching, watchlist_created_at, watched_episodes, rewatch_episodes, candidates)
             VALUES
-                (:id_user, :id_user_import, :show_name, :watch_later, :stopped_watching, :watchlist_created_at, :watched_episodes, :rewatch_episodes, :candidates)
+                (:id_user, :show_name, :watch_later, :stopped_watching, :watchlist_created_at, :watched_episodes, :rewatch_episodes, :candidates)
             ON DUPLICATE KEY UPDATE
-                id_user_import = :id_user_import_upd, watch_later = :watch_later_upd, stopped_watching = :stopped_watching_upd,
+                watch_later = :watch_later_upd, stopped_watching = :stopped_watching_upd,
                 watchlist_created_at = :watchlist_created_at_upd, watched_episodes = :watched_episodes_upd,
                 rewatch_episodes = :rewatch_episodes_upd, candidates = :candidates_upd
         ';
         $params = array(
             'id_user'                    => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_user_import'           => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
-            'id_user_import_upd'       => array('value' => $idTvtimeImport, 'type' => PDO::PARAM_INT),
             'show_name'                  => array('value' => $showName, 'type' => PDO::PARAM_STR),
             'watch_later'                => array('value' => $flags['archived'] ? 1 : 0, 'type' => PDO::PARAM_INT),
             'watch_later_upd'            => array('value' => $flags['archived'] ? 1 : 0, 'type' => PDO::PARAM_INT),
