@@ -549,14 +549,23 @@ class Watchlist extends Model
     }
 
     /**
-     * unwatched episodes of $idSerie, oldest first - season 0 (specials) is
-     * always excluded, same convention Series/Detail already uses for
-     * season_count: TheTVDB has no reliable field to tell a plot-relevant
-     * special apart from a clip-show/recap one (checked empirically against
-     * Lost and Euphoria - `airsBeforeSeason`/`airsBeforeEpisode`/`finaleType`
-     * are set inconsistently on both kinds in both shows), so there's no
-     * sound way to count only the specials that matter. Episodes not yet
-     * aired are excluded too - nothing to "watch" yet.
+     * unwatched episodes of $idSerie strictly after the user's furthest
+     * watched one (by season/episode number), oldest of those first - NOT
+     * simply "every unwatched episode oldest first": a long-running show
+     * with an unwatched gap way back (an old season the user never got to,
+     * or an import that missed marking it) must not get permanently stuck
+     * offering that gap as "next episode" once the user is actually caught
+     * up several seasons further - only what's strictly after their current
+     * position counts as remaining. A user who's watched nothing yet has no
+     * "furthest watched" position, so every unwatched-aired episode counts,
+     * same as before. Season 0 (specials) is always excluded, same
+     * convention Series/Detail already uses for season_count: TheTVDB has
+     * no reliable field to tell a plot-relevant special apart from a
+     * clip-show/recap one (checked empirically against Lost and Euphoria -
+     * `airsBeforeSeason`/`airsBeforeEpisode`/`finaleType` are set
+     * inconsistently on both kinds in both shows), so there's no sound way
+     * to count only the specials that matter. Episodes not yet aired are
+     * excluded too - nothing to "watch" yet.
      *
      * @return array<int, array{season_number: int, episode_number: int, name: ?string, default_name: ?string, tvdb_id: int}>
      */
@@ -567,10 +576,23 @@ class Watchlist extends Model
             FROM episode e
             LEFT JOIN user_episode_watched w ON w.id_episode = e.id_episode AND w.id_user = :id_user
             LEFT JOIN episode_lang el ON el.id_episode = e.id_episode AND el.id_appacman_lang = :id_appacman_lang
+            LEFT JOIN (
+                SELECT fe.season_number, fe.episode_number
+                FROM episode fe
+                INNER JOIN user_episode_watched fw ON fw.id_episode = fe.id_episode AND fw.id_user = :id_user
+                WHERE fe.id_serie = :id_serie AND fe.season_number > 0
+                ORDER BY fe.season_number DESC, fe.episode_number DESC
+                LIMIT 1
+            ) f ON 1 = 1
             WHERE e.id_serie = :id_serie
               AND e.season_number > 0
               AND e.aired IS NOT NULL AND e.aired <= CURDATE()
               AND w.id_episode IS NULL
+              AND (
+                  f.season_number IS NULL
+                  OR e.season_number > f.season_number
+                  OR (e.season_number = f.season_number AND e.episode_number > f.episode_number)
+              )
             ORDER BY e.season_number ASC, e.episode_number ASC
         ';
         $params = array(
