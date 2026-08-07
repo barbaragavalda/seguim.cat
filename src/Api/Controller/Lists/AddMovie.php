@@ -30,8 +30,7 @@ class AddMovie extends Controller
             return;
         }
 
-        // sync() first so user_list_movie always points at a real local
-        // movie row, same reasoning as Lists\AddSerie
+        // sync() first so user_list_movie always points at a real local movie row, same reasoning as Lists\AddSerie
         $info = (new Movie())->sync($tvdbId, $this->client);
         if (empty($info)) {
             $this->error = '404';

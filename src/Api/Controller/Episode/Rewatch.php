@@ -8,11 +8,7 @@ use Api\Model\WatchedEpisode;
 use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
 
-/**
- * Unlike Watch (POST /episode/{tvdbId}/watched), always records a new
- * watch event even if the episode is already watched - see
- * WatchedEpisode::markRewatched()
- */
+/** Unlike Watch, always records a new watch event even if already watched - see WatchedEpisode::markRewatched() */
 #[Route('/episode/{tvdbId}/rewatch', methods: ['POST'], name: 'api.episode.rewatch', requirements: ['tvdbId' => '\d+'])]
 class Rewatch extends Controller
 {
@@ -30,8 +26,8 @@ class Rewatch extends Controller
         $watchlist = new Watchlist();
         $idSerie   = $episode->getInfo()['id_serie'];
 
-        // same reasoning as Watch - a rewatch implies following the series,
-        // and just as much "veure més tard" (archived)'s own opposite
+        // same reasoning as Watch - a rewatch implies following the series
+        // and is just as much the opposite of "archived"
         $watchlist->add($this->user->getID(), $idSerie);
         $watchlist->setArchived($this->user->getID(), $idSerie, false);
 

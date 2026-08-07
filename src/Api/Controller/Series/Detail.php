@@ -45,16 +45,13 @@ class Detail extends Controller
 
         $episodeRows = (new Episode())->syncForSeries($info['id_serie'], $tvdbId, $this->client);
 
-        // regular numbered seasons only (season 0/specials excluded) among
-        // this series' own already-synced episodes - see db.sql's
-        // season_count comment for why this is preferred over TheTVDB's own
-        // /extended `seasons` array
+        // regular numbered seasons only (specials excluded) - see db.sql's season_count
+        // comment for why this beats TheTVDB's own /extended `seasons` array
         $seasonCount = count(array_unique(array_filter(array_column($episodeRows, 'season_number'))));
         $series->updateSeasonCount($seasonCount);
         $info['season_count'] = $seasonCount;
 
-        // $this->user is null for an anonymous request (default_token, no
-        // real user logged in) - series detail itself is public, only the
+        // $this->user is null for an anonymous request - series detail is public, only the
         // per-user watched/watchlist flags need a real user
         $watchedEpisode = new WatchedEpisode();
         $watchedIds     = $this->user !== null
@@ -64,24 +61,18 @@ class Detail extends Controller
             ? $watchedEpisode->watchCounts($this->user->getID(), $info['id_serie'])
             : [];
 
-        // Config::getLanguage() is already resolved per-request (Accept-
-        // Language header for this sub-project, since 'api' isn't {lang}-
-        // prefixed - see Core\Utils\Language::initLanguage()) - only that
-        // one language's translation is fetched/returned, not every
-        // language this app supports
+        // Config::getLanguage() resolves via the Accept-Language header since 'api' isn't
+        // {lang}-prefixed - see Core\Utils\Language::initLanguage(). Only that language is fetched
         $culture = $this->config->getLanguage();
 
-        // fall back to TheTVDB's own base record (default_name/
-        // default_overview, normally the show's original-language text)
-        // when the app's current language has no translation, rather than
-        // showing a blank title/overview
+        // fall back to TheTVDB's base record (default_name/default_overview, usually
+        // original-language text) when there's no translation, rather than a blank title/overview
         $translation      = (new SerieLang())->syncForLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
         $info['name']     = $translation['name'] ?: $info['default_name'];
         $info['overview'] = $translation['overview'] ?: $info['default_overview'];
 
-        // no per-language text of its own to fall back on - see
-        // SerieGenre's own docblock for why; only genre labels vary by
-        // culture, and that's handled client-side (l10n by slug), not here
+        // no per-language text to fall back on - see SerieGenre's docblock. Genre labels
+        // vary by culture client-side (l10n by slug), not here
         $info['genres'] = (new SerieGenre())->forSerie($info['id_serie']);
 
         $info['trailer'] = (new SerieTrailer())->bestForLanguage(
@@ -89,8 +80,7 @@ class Detail extends Controller
             Languages::tvdbCodeForCulture($culture),
         );
 
-        // same default_name/default_overview fallback as the series itself
-        // above, per episode
+        // same default_name/default_overview fallback as the series above, per episode
         $episodeTranslations = (new EpisodeLang())->syncForSerieAndLanguage($info['id_serie'], $tvdbId, $culture, $this->client);
         foreach ($episodeRows as &$episode) {
             $episode['watched']     = in_array($episode['id_episode'], $watchedIds, true);
@@ -105,8 +95,7 @@ class Detail extends Controller
             ? (new Watchlist())->getFlags($this->user->getID(), $info['id_serie'])
             : array('inWatchlist' => false, 'archived' => false, 'removed' => false);
 
-        // independent of the watchlist flags above - see SerieFavorite's
-        // own docblock on why favoriting doesn't require tracking first
+        // independent of the watchlist flags above - see SerieFavorite's own docblock
         $isFavorite = $this->user !== null
             ? (new SerieFavorite())->has($this->user->getID(), $info['id_serie'])
             : false;

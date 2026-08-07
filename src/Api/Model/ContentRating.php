@@ -6,21 +6,14 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * TheTVDB's own content-rating catalog - age ratings (e.g. "PG-13") are
- * country-specific, not language-specific (TheTVDB ties each one to a
- * `country`, not a language), but still a global, stable, shared catalog
- * keyed by tvdb_rating_id - same reasoning as Api\Model\Genre, just per
- * (country, rating) pair instead of per genre. movie_content_rating is a
- * plain join table against this one.
+ * TheTVDB's content-rating catalog, keyed by tvdb_rating_id - ratings are
+ * country-specific, not language-specific. movie_content_rating is a plain
+ * join table against this one.
  */
 class ContentRating extends Model
 {
 
-    /**
-     * upserted rather than inserted since the same rating id is synced
-     * repeatedly (once per movie that has it) - a plain INSERT would fail
-     * every time after the first
-     */
+    /** Upserted, not inserted - the same rating id is synced once per movie that has it. */
     public function upsert(array $rating): void
     {
         if (empty($rating['id'])) {

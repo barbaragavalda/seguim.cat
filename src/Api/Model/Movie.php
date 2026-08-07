@@ -32,10 +32,7 @@ class Movie extends Model
         return $this->load($movie);
     }
 
-    /**
-     * same on-demand lazy-mirroring shape as Series::sync() - fetches/
-     * upserts from TheTVDB only when missing or past the 24h TTL
-     */
+    /** Lazy-mirrors from TheTVDB - fetches/upserts only when missing or past the 24h TTL. */
     public function sync(int $tvdbId, Client $client): array
     {
         $found = $this->loadWithTvdbId($tvdbId);
@@ -53,10 +50,8 @@ class Movie extends Model
         $this->upsert($tvdbId, $data);
         $this->loadWithTvdbId($tvdbId);
 
-        // piggyback on the same 24h sync cycle as the movie's own base
-        // data, same reasoning as Series::sync()'s background fetch - a
-        // full replace each cycle rather than incremental upserts, since
-        // none of these need to preserve any local-only state per row
+        // full replace each cycle rather than incremental upserts - none of
+        // these need to preserve local-only state per row
         $idMovie = (int) $this->info['id_movie'];
         (new MovieGenre())->syncForMovie($idMovie, $data['genres'] ?? array());
         (new MovieCast())->syncForMovie($idMovie, $data['characters'] ?? array());
@@ -85,21 +80,16 @@ class Movie extends Model
                 release_date = :release_date_upd,
                 runtime = :runtime_upd, status = :status_upd, slug = :slug_upd, synced_at = NOW()
         ';
-        // TheTVDB's own base/extended record name/overview - normally the
-        // movie's original-language text, used as a fallback when
-        // movie_lang has no translation for the app's current language (see
-        // Movie\Detail controller)
+        // fallback for when movie_lang has no translation for the current language
         $defaultName     = $data['name'] ?? null;
         $defaultOverview = $data['overview'] ?? null;
         $image      = $data['image'] ?? null;
         $background = $data['background'] ?? null;
         $year       = $data['year'] ?? null;
-        // `first_release` is the movie's single "global" release date,
-        // unlike the many country-specific dates in its `releases` array
+        // the single "global" release date, unlike the many country-specific dates in `releases`
         $releaseDate = $data['first_release']['date'] ?? null;
         $runtime    = $data['runtime'] ?? null;
-        // MovieExtendedRecord's status is an object ({id, name, recordType,
-        // keepUpdated}), same shape as a series' own status
+        // status is an object ({id, name, ...}), same shape as a series' own status
         $status = $data['status']['name'] ?? null;
         $slug   = $data['slug'] ?? null;
 

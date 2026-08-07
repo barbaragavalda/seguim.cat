@@ -9,21 +9,12 @@ class WatchedEpisode extends Model
 {
 
     /**
-     * idempotent - a no-op if $idEpisode is already watched at all (one or
-     * more times), unlike markRewatched() below. $watchedAt preserves TV
-     * Time's own original watch date when called from the importer
-     * (Api\Model\TvTimeImport\Processor) - defaults to "now" for the
-     * regular Episode/Watch controller flow. Without this, every imported
-     * episode would tie for the import's own timestamp, making Watchlist::
-     * listWatching()'s "most recently watched" ordering meaningless for
-     * imported data. Deliberately never tags the row with an import id
-     * (unlike syncRewatchesFromImport() below) - this method is already
-     * idempotent on its own (isWatched() covers any row regardless of
-     * origin), and tagging it would double as a false "already-imported
-     * rewatch" for syncRewatchesFromImport()'s own count - confirmed
-     * empirically as a real bug (a cpt=2 rewatch only inserted 1 row
-     * because the base watch's own tagged row was miscounted as one of
-     * the two)
+     * Idempotent - no-op if already watched, unlike markRewatched() below. $watchedAt
+     * preserves TV Time's date, so Watchlist::listWatching()'s "recently watched"
+     * ordering stays meaningful for imports. Never tags the row with an import id (unlike
+     * syncRewatchesFromImport() below) - already idempotent via isWatched(), and tagging
+     * it would double-count as an "already-imported rewatch" there (confirmed bug: a
+     * cpt=2 rewatch only inserted 1 row because the base watch's row got miscounted).
      */
     public function markWatched(int $idUser, int $idEpisode, ?string $watchedAt = null): void
     {
@@ -34,15 +25,10 @@ class WatchedEpisode extends Model
     }
 
     /**
-     * always inserts a new watch event, even if $idEpisode is already
-     * watched - this is the point: user_episode_watched is one row per
-     * watch event, not per episode, so a rewatch just adds another one
-     * rather than being silently absorbed like markWatched() would. Used
-     * directly by the app's own rewatch controller (one real, freshly-
-     * happening event); the importer uses syncRewatchesFromImport() below
-     * instead, since TV Time's own export data is a bare count, not
-     * discrete events, and needs its own dedup logic to stay safe across
-     * more than one import job
+     * Always inserts a new watch event, even if already watched - one row per watch
+     * event, not per episode, so a rewatch just adds another rather than being absorbed
+     * like markWatched(). The importer uses syncRewatchesFromImport() instead, since TV
+     * Time's export is a bare count, not discrete events.
      */
     public function markRewatched(int $idUser, int $idEpisode, ?string $watchedAt = null): void
     {
@@ -50,18 +36,11 @@ class WatchedEpisode extends Model
     }
 
     /**
-     * TV Time's own export gives a bare rewatch *count* per episode (see
-     * Api\Model\TvTimeImport\Parser's own docblock) - never discrete,
-     * individually-timestamped events the way a movie rewatch is - so
-     * there's no natural key to dedupe individual rewatch rows against
-     * across two separate import jobs (e.g. the user re-uploads the same
-     * or a newer export). Instead, this counts how many rewatch rows an
-     * *earlier* import already recorded for this episode (tagged via
-     * $idTvtimeImport on insert) and only inserts the shortfall - so
-     * re-importing an unchanged export adds nothing, and a newer export
-     * with a higher count only adds the difference. A rewatch logged by
-     * the user directly in the app (markRewatched() above, untagged)
-     * never counts toward this and is never touched by it.
+     * TV Time's export gives a bare rewatch count per episode, not discrete timestamped
+     * events, so there's no natural dedup key across import jobs. Instead this counts how
+     * many rewatch rows an earlier import already recorded (tagged via $idTvtimeImport)
+     * and inserts only the shortfall, so re-importing an unchanged export adds nothing.
+     * Untagged rewatches logged directly in the app (markRewatched()) never count here.
      *
      * @return int how many new rows were actually inserted
      */
@@ -88,13 +67,7 @@ class WatchedEpisode extends Model
         return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
     }
 
-    /**
-     * the inverse of markRewatched() - collapses every watch event for
-     * $idEpisode back down to just the earliest one, undoing any
-     * rewatches without fully unwatching it like markUnwatched() does. A
-     * no-op if $idEpisode isn't watched at all, or already watched exactly
-     * once
-     */
+    /** Inverse of markRewatched() - collapses every watch event back to the earliest one, without fully unwatching like markUnwatched() does. No-op if watched 0 or 1 times */
     public function resetToSingleWatch(int $idUser, int $idEpisode): void
     {
         $sql    = '
@@ -157,11 +130,7 @@ class WatchedEpisode extends Model
         return count($this->mysql->query($sql, $params)) > 0;
     }
 
-    /**
-     * a full reset - every watch event for $idEpisode is removed, not just
-     * the most recent rewatch. Undoing a single rewatch (rather than the
-     * whole history) isn't something this app supports
-     */
+    /** Full reset - every watch event is removed, not just the most recent rewatch. Undoing a single rewatch isn't supported */
     public function markUnwatched(int $idUser, int $idEpisode): void
     {
         $sql    = '
@@ -188,11 +157,8 @@ class WatchedEpisode extends Model
     }
 
     /**
-     * called by Episode::removeStale() when TheTVDB no longer returns
-     * episodes that were previously mirrored locally (removed, merged, or
-     * renumbered upstream) - every user's watch history for them is wiped
-     * along with the episode rows themselves, across every user at once,
-     * not just one
+     * Called by Episode::removeStale() when TheTVDB no longer returns episodes previously
+     * mirrored locally - wipes watch history for them across every user.
      *
      * @param int[] $idEpisodes
      */
@@ -217,11 +183,7 @@ class WatchedEpisode extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * whether the user has ever watched (or rewatched) anything from
-     * $idSerie at all - Api\Controller\Watchlist\Remove's own gate on the
-     * hard-delete action, see that class' own docblock on why
-     */
+    /** Whether the user has watched anything from $idSerie at all - gates Watchlist\Remove's hard-delete, see that controller's docblock */
     public function hasAnyWatched(int $idUser, int $idSerie): bool
     {
         $sql    = '
@@ -258,9 +220,8 @@ class WatchedEpisode extends Model
     }
 
     /**
-     * how many times each of $idSerie's episodes has been watched, keyed
-     * by episode.id_episode - episodes with zero watches simply don't
-     * appear (same convention as watchedEpisodeIds())
+     * How many times each episode has been watched, keyed by id_episode - episodes with
+     * zero watches don't appear (same convention as watchedEpisodeIds()).
      *
      * @return array<int, int>
      */

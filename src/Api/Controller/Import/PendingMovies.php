@@ -7,10 +7,9 @@ use Api\Model\MovieImportPending;
 use Core\Routing\Attribute\Route;
 
 /**
- * Movie titles from a TV Time import that Api\Model\TvTimeImport\MovieMatcher
- * couldn't confidently resolve on its own - each with up to 5 TheTVDB
- * candidates (name/year/image) for the app's own resolution screen. See
- * MovieMatcher's own docblock for why this exists instead of guessing.
+ * Movie titles from a TV Time import that MovieMatcher couldn't confidently
+ * resolve - each with up to 5 TheTVDB candidates for the app's resolution
+ * screen. See MovieMatcher's own docblock for why this exists.
  */
 #[Route('/import/movies/pending', methods: ['GET'], name: 'api.import.movies.pending')]
 class PendingMovies extends Controller
@@ -26,9 +25,8 @@ class PendingMovies extends Controller
                     'id'            => (int) $row['id_user_movie_pending'],
                     'movie_name'    => $row['movie_name'],
                     'expected_year' => $row['expected_year'],
-                    // lets the resolution screen show "watched on <date>"
-                    // vs. "from your watchlist", same distinction the
-                    // regular (already-matched) import path applies
+                    // distinguishes "watched on <date>" vs "in your watchlist",
+                    // same as the regular (already-matched) import path
                     'watched'       => $row['watched_at'] !== null,
                     'watched_at'    => $row['watched_at'],
                     'candidates'    => $row['candidates'],

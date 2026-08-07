@@ -8,11 +8,7 @@ use Api\Model\UserList;
 use Api\Model\UserListMovie;
 use Core\Routing\Attribute\Route;
 
-/**
- * Moves this movie to right after `after` (a tvdbId) within the list, or to
- * the very front if `after` is omitted/empty - same "relative to a visible
- * neighbor" reasoning as Lists\ReorderSerie
- */
+/** `after` omitted/empty moves to the front - same relative-to-neighbor reasoning as Lists\ReorderSerie */
 #[Route('/lists/{id}/movies/{tvdbId}/reorder', methods: ['POST'], name: 'api.lists.reorder_movie', requirements: ['id' => '\d+', 'tvdbId' => '\d+'])]
 class ReorderMovie extends Controller
 {

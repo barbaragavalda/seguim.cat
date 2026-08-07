@@ -43,23 +43,17 @@ class Detail extends Controller
             return;
         }
 
-        // Config::getLanguage() is already resolved per-request, same as
-        // Series\Detail - only that one language's translation is fetched/
-        // returned, not every language this app supports
+        // only that one language's translation is fetched, not every language this app supports
         $culture = $this->config->getLanguage();
 
-        // fall back to TheTVDB's own base/extended record (default_name/
-        // default_overview) when the app's current language has no
-        // translation, rather than showing a blank title/overview - same
-        // pattern as Series\Detail
+        // fall back to TheTVDB's base record (default_name/default_overview) when there's no
+        // translation for the app's language, rather than a blank title/overview
         $translation      = (new MovieLang())->syncForLanguage($info['id_movie'], $tvdbId, $culture, $this->client);
         $info['name']     = $translation['name'] ?: $info['default_name'];
         $info['overview'] = $translation['overview'] ?: $info['default_overview'];
 
-        // none of these have per-language text of their own to fall back on
-        // - see MovieGenre/MovieCast/MovieContentRating/MovieTrailer's own
-        // docblocks for why - only genre labels vary by culture, and that's
-        // handled client-side (l10n by slug), not here
+        // none of these have per-language text to fall back on - see their own docblocks.
+        // Only genre labels vary by culture, handled client-side (l10n by slug), not here
         $info['genres']         = (new MovieGenre())->forMovie($info['id_movie']);
         $info['cast']           = (new MovieCast())->forMovie($info['id_movie']);
         $info['content_rating'] = (new MovieContentRating())->bestForCountry(
@@ -71,18 +65,15 @@ class Detail extends Controller
             Languages::tvdbCodeForCulture($culture),
         );
 
-        // $this->user is null for an anonymous request (default_token, no
-        // real user logged in) - movie detail itself is public, only the
-        // per-user watchlist/watched flags need a real user, same as
-        // Series\Detail
+        // $this->user is null for an anonymous request - movie detail is public, only the
+        // per-user watchlist/watched flags need a real user
         $inWatchlist = $this->user !== null
             ? (new MovieWatchlist())->has($this->user->getID(), $info['id_movie'])
             : false;
         $watchCount  = $this->user !== null
             ? (new WatchedMovie())->watchCount($this->user->getID(), $info['id_movie'])
             : 0;
-        // independent of the watchlist flag above - see Series\Detail's own
-        // comment, identical reasoning
+        // independent of the watchlist flag above - see Series\Detail's own comment
         $isFavorite  = $this->user !== null
             ? (new MovieFavorite())->has($this->user->getID(), $info['id_movie'])
             : false;

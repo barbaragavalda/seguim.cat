@@ -24,9 +24,8 @@ class ConfirmEmailChange extends Controller
             return;
         }
 
-        // re-checked here too, not just at request time - another account
-        // could have taken this exact address during the 15-minute window
-        // between request and confirm
+        // re-checked here too - another account could take this address during
+        // the 15-minute window between request and confirm
         if (!$this->user->updateEmail($newEmail)) {
             $this->error = $this->translate('That email is already registered.');
             return;

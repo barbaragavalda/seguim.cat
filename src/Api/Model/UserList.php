@@ -5,12 +5,7 @@ namespace Api\Model;
 use Core\Model\Model;
 use PDO;
 
-/**
- * A user's own custom series lists (e.g. imported from TV Time's own
- * "lists" feature - see Api\Model\TvTimeImport\Parser). Ordered among
- * themselves via a large-gap integer `ordering` (1000 per slot) rather
- * than dense positions - see moveAfter()'s own docblock for why.
- */
+/** A user's own custom series lists (e.g. imported from TV Time - see TvTimeImport\Parser). Ordered via a large-gap integer `ordering`, see moveAfter() */
 class UserList extends Model
 {
 
@@ -18,12 +13,7 @@ class UserList extends Model
 
     private const int GAP = 1000;
 
-    /**
-     * $createdAt preserves TV Time's own list-creation date when called
-     * from the importer (Api\Model\TvTimeImport\Processor) - defaults to
-     * "now" for the regular Lists\Create controller flow, same reasoning
-     * as Watchlist::addFromImport()'s own $createdAt
-     */
+    /** $createdAt preserves TV Time's import date when set; defaults to now otherwise - see Watchlist::addFromImport() */
     public function create(int $idUser, string $name, ?int $ordering = null, ?string $createdAt = null): int
     {
         $sql    = '
@@ -41,13 +31,7 @@ class UserList extends Model
         return (int) $this->mysql->lastInsertId();
     }
 
-    /**
-     * Same as create(), but tags the new list with TV Time's own list key
-     * (lists-prod-lists.csv's `s_key`) so a *later, separate* import job can
-     * recognize this exact list again via findByTvtimeKey() instead of
-     * creating a duplicate - see Processor::processLists()'s own docblock
-     * on why re-importing needs this.
-     */
+    /** Same as create(), but tags the list with TV Time's list key so a later import can find it again via findByTvtimeKey() instead of duplicating it */
     public function createFromImport(int $idUser, string $name, string $tvtimeSKey, ?string $createdAt = null): int
     {
         $sql    = '
@@ -67,12 +51,9 @@ class UserList extends Model
     }
 
     /**
-     * The list a *previous* import job already created for this TV Time
-     * list key, if any - lets a re-import reuse and top up an existing
-     * list (add whatever series/movies are missing from it) instead of
-     * creating a duplicate. Deliberately doesn't touch the list's own
-     * `name` on a match - the user may have renamed it since, and a fresh
-     * import shouldn't silently revert that.
+     * The list a previous import already created for this TV Time key, if any - lets a
+     * re-import reuse it. Deliberately doesn't touch the list's `name` on a match, since
+     * the user may have renamed it since.
      */
     public function findByTvtimeKey(int $idUser, string $tvtimeSKey): ?array
     {
@@ -121,14 +102,7 @@ class UserList extends Model
         return count($this->mysql->query($sql, $params)) > 0;
     }
 
-    /**
-     * also deletes every user_list_serie/user_list_movie row for this list,
-     * plus any user_serie_list_pending/user_movie_list_pending link
-     * that pointed a still-unresolved pending show/movie at it - there's no
-     * FK cascade in this schema (none of this project's tables use one), so
-     * the caller doesn't have to remember to call UserListSerie/
-     * UserListMovie/*ImportPending separately
-     */
+    /** Also deletes user_list_serie/movie rows and pending links for this list - no FK cascade in this schema, so callers don't need to clean those up separately */
     public function delete(int $idUser, int $idUserList): void
     {
         $sql    = '
@@ -182,11 +156,7 @@ class UserList extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * every list of $idUser's, unpaginated - for the "which of my lists is
-     * this series already in" picker (Lists\Membership), which needs the
-     * full set to render its checkboxes rather than one page at a time
-     */
+    /** Unpaginated - for the Lists\Membership picker, which needs the full set to render its checkboxes */
     public function allForUser(int $idUser): array
     {
         $sql    = '
@@ -223,15 +193,9 @@ class UserList extends Model
     }
 
     /**
-     * moves $idUserList to be right after $afterIdUserList among this
-     * user's own lists, or to the very front if $afterIdUserList is null.
-     * Deliberately doesn't need to know the *whole* order - only the
-     * neighbor a client dropped this list next to, which is always on
-     * whatever page it's currently looking at, unlike a "send the full
-     * order" design that would need every list loaded across every page
-     * at once. Returns false if $afterIdUserList doesn't exist for this
-     * user (a stale reference - e.g. that list got deleted by another
-     * request first)
+     * Moves $idUserList after $afterIdUserList (or to the front if null). Only needs to
+     * know the neighbor, not the whole order - keeps this pagination-safe. Returns false
+     * if $afterIdUserList doesn't exist for this user (a stale reference).
      */
     public function moveAfter(int $idUser, int $idUserList, ?int $afterIdUserList): bool
     {
@@ -252,9 +216,8 @@ class UserList extends Model
                 return true;
             }
 
-            // null means the two neighbors are already adjacent integers -
-            // no room to fit a new value between them. Renumber the whole
-            // list generously and try exactly once more
+            // null means the neighbors are already adjacent integers - no room between
+            // them. Rebalance and try once more.
             $this->rebalance($idUser);
         }
 

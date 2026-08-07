@@ -12,10 +12,8 @@ use Api\Model\UserListSerie;
 use Core\Routing\Attribute\Route;
 
 /**
- * A list's series and movies are fetched together (own independent page/
- * hasMore per kind, since they're paginated separately - own ordering,
- * own PAGE_SIZE) rather than needing two requests, since a list detail
- * screen shows both sections at once anyway.
+ * Series and movies are fetched together, each paginated independently -
+ * a list detail screen shows both sections at once anyway.
  */
 #[Route('/lists/{id}', methods: ['GET'], name: 'api.lists.show', requirements: ['id' => '\d+'])]
 class Show extends Controller
@@ -40,11 +38,8 @@ class Show extends Controller
         $this->assign('movies', $movies['results']);
         $this->assign('moviesHasMore', $movies['hasMore']);
 
-        // how many of this list's own members are still waiting on a
-        // pending user_serie_pending/user_movie_pending row - see
-        // those tables' own docblocks in db.sql (Processor::processLists()
-        // links a still-unresolved series/movie to its list instead of
-        // silently dropping it)
+        // series/movies still waiting on a pending import row (linked, not
+        // dropped, by Processor::processLists()) - see db.sql's docblocks
         $this->assign('pendingCount', (new SeriesImportPending())->pendingCountForList($id) + (new MovieImportPending())->pendingCountForList($id));
     }
 

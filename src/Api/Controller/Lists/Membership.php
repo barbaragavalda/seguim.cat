@@ -9,12 +9,9 @@ use Api\Model\UserListSerie;
 use Core\Routing\Attribute\Route;
 
 /**
- * Every one of the user's own lists, each flagged with whether $tvdbId is
- * already in it - backs the multi-list "add to a list" picker on the
- * series detail screen. Deliberately doesn't sync() the series (unlike
- * AddSerie) - by the time this screen is reachable the series was already
- * synced to show its own detail, and a series that was never synced can't
- * be in any list anyway, so a plain local lookup is enough.
+ * Deliberately doesn't sync() the series (unlike AddSerie) - by now it was
+ * already synced to show its own detail, and an unsynced series can't be
+ * in any list anyway.
  */
 #[Route('/lists/membership/{tvdbId}', methods: ['GET'], name: 'api.lists.membership', requirements: ['tvdbId' => '\d+'])]
 class Membership extends Controller

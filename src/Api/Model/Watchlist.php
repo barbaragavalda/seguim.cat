@@ -26,24 +26,12 @@ class Watchlist extends Model
     }
 
     /**
-     * used only by the TV Time importer (Api\Model\TvTimeImport\Processor) -
-     * an upsert rather than add()'s INSERT IGNORE so a show already in the
-     * watchlist still gets synced/kept up to date, but watch_later/
-     * stopped_watching are deliberately only ever set on the *first* insert,
-     * never touched again on a later conflict. A previous version of this
-     * method re-set them unconditionally on every call, meaning simply
-     * re-running an import (e.g. to pick up newly-recoverable episodes -
-     * see Api\Model\TheTvdb\Client::getAllEpisodePages()) silently reset
-     * every manual watch_later/stopped_watching choice the user had made by
-     * hand since the previous import back to whatever the export itself
-     * says - confirmed to happen for real (3 of 5 manually-set "veure més
-     * tard" shows lost that flag on a reconciliation re-import before this
-     * was caught). $createdAt preserves TV Time's own follow date (falls
-     * back to "now" when the export has none - see Parser::parse()'s
-     * "removed" shows) so listNotStarted()'s "most recently added" ordering
-     * stays meaningful for imported shows instead of every one of them
-     * tying for the import's own timestamp - also only ever set on insert,
-     * same reasoning.
+     * Used only by the TV Time importer - an upsert, but watch_later/stopped_watching are
+     * only ever set on the *first* insert, never touched on a later conflict: an earlier
+     * version re-set them unconditionally, so simply re-running an import silently
+     * reverted manual archive/remove choices back to the export's values (confirmed: 3 of
+     * 5 manually-archived shows lost that flag on a reconciliation re-import). $createdAt
+     * is preserved the same way, for the same reason.
      */
     public function addFromImport(int $idUser, int $idSerie, bool $archived, bool $removed, ?string $createdAt = null): void
     {
@@ -62,12 +50,7 @@ class Watchlist extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * user-driven archive/unarchive (Api\Controller\Watchlist\{Archive,
-     * Unarchive}) - same `archived` flag the TV Time importer sets, just
-     * togglable by hand now too. A no-op if $idSerie isn't actually in the
-     * user's watchlist, same tolerant style as remove() below
-     */
+    /** User-driven archive/unarchive - same `archived` flag the TV Time importer sets. No-op if $idSerie isn't in the user's watchlist */
     public function setArchived(int $idUser, int $idSerie, bool $archived): void
     {
         $sql    = '
@@ -83,13 +66,7 @@ class Watchlist extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * user-driven mark-removed/restore (Api\Controller\Watchlist\
-     * {MarkRemoved,Restore}) - unlike remove() below, this keeps the row
-     * (and its watch history) and just hides it from both watchlist
-     * listings, same `removed` flag the TV Time importer sets for a show
-     * no longer followed there
-     */
+    /** User-driven mark-removed/restore - unlike remove() below, keeps the row and just hides it from both listings, same `removed` flag the TV Time importer sets */
     public function setRemoved(int $idUser, int $idSerie, bool $removed): void
     {
         $sql    = '
@@ -105,11 +82,7 @@ class Watchlist extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * hard delete - the row (and its archived/removed flags) is gone
-     * entirely, unlike setRemoved()'s soft hide above. Watched-episode
-     * history isn't touched (a separate table)
-     */
+    /** Hard delete - the row is gone entirely, unlike setRemoved()'s soft hide above. Watched-episode history isn't touched (a separate table) */
     public function remove(int $idUser, int $idSerie): void
     {
         $sql    = '
@@ -151,11 +124,8 @@ class Watchlist extends Model
     }
 
     /**
-     * used by Api\Controller\Series\Detail so the series detail screen can
-     * show the archived/removed toggles in their current state, not just
-     * the plain in-watchlist flag has() gives - a row not in the watchlist
-     * at all comes back as every flag false, same as a fresh/never-added
-     * series, rather than null/missing
+     * Used by Series\Detail to show the archived/removed toggles' current state, not just
+     * the plain has() flag. A row not in the watchlist comes back as every flag false.
      *
      * @return array{inWatchlist: bool, archived: bool, removed: bool}
      */
@@ -183,21 +153,11 @@ class Watchlist extends Model
     }
 
     /**
-     * series with at least one watched episode AND the last aired regular
-     * episode still unwatched, most-recently-watched first (i.e. "continue
-     * watching") - a series drops out of this list once its finale is
-     * watched (same "finished" definition as listByStatus()'s own
-     * $watchedLastEpisode - see that method's docblock), even if earlier
-     * gaps are still unwatched; it reappears on its own if a new episode
-     * airs later, since this is computed fresh every call, not stored. Not
-     * paginated, unlike listNotStarted(): a personal tracker's in-progress
-     * list stays small by nature, so the extra page/hasMore surface isn't
-     * worth it here. Archived/removed shows (only ever set by the TV Time
-     * importer) are excluded here too, same as listNotStarted() - the rows
-     * themselves aren't deleted, just hidden from both lists.
-     * $idAppacmanLang and the name/overview/image/next_episode/
-     * remaining_episodes treatment are the same as listNotStarted(), see
-     * that method's docblock
+     * Series with at least one watched episode AND the last aired regular episode still
+     * unwatched, most-recently-watched first ("continue watching") - drops out once the
+     * finale is watched (same definition as listByStatus()'s $watchedLastEpisode),
+     * computed fresh every call, not stored. Not paginated, unlike listNotStarted(): an
+     * in-progress list stays small by nature. Archived/removed shows are excluded here too.
      */
     public function listWatching(int $idUser, int $idAppacmanLang): array
     {
@@ -226,17 +186,11 @@ class Watchlist extends Model
     }
 
     /**
-     * whether $idUser has watched $idSerie's last aired regular episode -
-     * the shared "finished" definition behind listByStatus()'s own
-     * $watchedLastEpisode SQL fragment and listWatching()'s own filter, see
-     * either one's docblock. A PHP-side per-series helper (rather than a
-     * SQL fragment like listByStatus() needs) since listWatching() already
-     * loops its rows one at a time in finalizeRows() to compute
-     * next_episode/remaining_episodes the same way. Public so
-     * Api\Model\TvTimeImport\Processor/SeriesImportPending can reuse the
-     * exact same definition to force watch_later/stopped_watching off a
-     * show the user has already finished, regardless of what TheTVDB's own
-     * (unrelated) status field says or what TV Time's export claims.
+     * Whether $idUser has watched $idSerie's last aired regular episode - the shared
+     * "finished" definition behind listByStatus()'s $watchedLastEpisode and
+     * listWatching()'s filter. Public so TvTimeImport\Processor/SeriesImportPending can
+     * reuse it to force watch_later/stopped_watching off an already-finished show,
+     * regardless of TheTVDB's status field or TV Time's export.
      */
     public function hasWatchedLastEpisode(int $idUser, int $idSerie): bool
     {
@@ -262,17 +216,11 @@ class Watchlist extends Model
     }
 
     /**
-     * series with zero watched episodes, most-recently-added-to-the-
-     * watchlist first. $idAppacmanLang is the current request's already-
-     * resolved language (Api\Model\TheTvdb\Languages::idForCulture(Config::
-     * getLanguage())) - a LEFT JOIN, not INNER, so a series still shows up
-     * even if that language's translation hasn't been synced yet (sl.name/
-     * sl.overview just come back null, same as Series/Detail's fallback:
-     * sl.name ?: s.default_name). Archived/removed shows (only ever set by
-     * the TV Time importer) are excluded - the rows themselves aren't
-     * deleted, just hidden from this list. Pagination fetches one extra row
-     * (PAGE_SIZE + 1, see pageParams()) purely to detect hasMore without a
-     * separate COUNT(*) query - finalizePage() trims it back off.
+     * Series with zero watched episodes, most-recently-added first. LEFT JOIN (not INNER)
+     * on serie_lang so a series still shows up even if that language's translation hasn't
+     * synced yet (falls back to default_name, same as Series/Detail). Archived/removed
+     * shows are excluded. Pagination fetches one extra row (see pageParams()) to detect
+     * hasMore without a separate COUNT(*) query.
      *
      * @return array{results: array, hasMore: bool}
      */
@@ -301,23 +249,14 @@ class Watchlist extends Model
     private const array STATUSES = array('all', 'removed', 'archived', 'watching', 'not_started', 'finished', 'finished_pending');
 
     /**
-     * unified, paginated "browse everything" view (for a profile-style
-     * screen) - unlike listWatching()/listNotStarted() above, every status
-     * here is paginated, since archived/removed/finished can easily
-     * accumulate hundreds of rows (a TV Time import commonly does). 5 of the
-     * non-`all` statuses (removed/archived/not_started/watching/finished)
-     * partition every possible (archived, removed, watched vs. remaining)
-     * combination exactly once - `removed` wins over `archived` when a
-     * series is somehow flagged as both (confirmed with the user: "removed"
-     * is the more definitive state). `finished_pending` is not part of that
-     * partition - it's a subset of `finished` (every finished_pending row
-     * is also finished), for a series whose finale is watched but has an
-     * earlier gap - see $hasUnwatchedAired's own docblock. `all` is
-     * unfiltered - every row in the user's watchlist regardless of those
-     * flags, same ordering (`w.created DESC`) as the others. $search, when
-     * given, further filters by title (translated name, falling back to
-     * default_name same as everywhere else) - a simple `LIKE`, no full-text
-     * index, matching this app's personal-tracker scale
+     * Unified, paginated "browse everything" view - unlike listWatching()/listNotStarted()
+     * above, every status here is paginated, since archived/removed/finished can easily
+     * accumulate hundreds of rows. 5 of the non-`all` statuses partition every (archived,
+     * removed, watched vs. remaining) combination exactly once - `removed` wins over
+     * `archived` when both are set (confirmed with the user). `finished_pending` is a
+     * subset of `finished`, not part of that partition - see $hasUnwatchedAired's docblock.
+     * $search filters by title with a simple LIKE, no full-text index, matching this app's
+     * personal-tracker scale.
      *
      * @return array{results: array, hasMore: bool}
      */
@@ -327,12 +266,9 @@ class Watchlist extends Model
             throw new \InvalidArgumentException('Unknown watchlist status: ' . $status);
         }
 
-        // a series counts as "finished" once its last aired regular episode
-        // is watched, even with earlier gaps still unwatched (confirmed
-        // with the user: watching the finale is what they mean by
-        // "finished", not a full gap-free watch-through) - deliberately NOT
-        // "no unwatched aired episodes anywhere", which used to be this
-        // status' definition
+        // "finished" = last aired regular episode watched, even with earlier gaps
+        // unwatched (confirmed with the user) - deliberately NOT "no unwatched aired
+        // episodes anywhere", which used to be this status' definition
         $watchedLastEpisode = '
             EXISTS (
                 SELECT 1
@@ -357,16 +293,11 @@ class Watchlist extends Model
                 WHERE uew2.id_user = w.id_user AND e2.id_serie = s.id_serie
             )
         ';
-        // an aired episode still unwatched - combined with $watchedLastEpisode
-        // below, this can only be an earlier gap (the finale itself is
-        // guaranteed watched), which is exactly what "finished_pending"
-        // means: confirmed with the user that this is a separate, additional
-        // status alongside "finished" (every finished_pending row is also
-        // finished - see that status' own definition just above), not a
-        // replacement definition of it. Deliberately NOT season_number > 0
-        // only, unlike $watchedLastEpisode/remainingEpisodes() elsewhere - an
-        // unwatched special counts as "pending" here too (confirmed with the
-        // user), even though it never decides "finished" itself
+        // An aired episode still unwatched; combined with $watchedLastEpisode this can
+        // only be an earlier gap, which is "finished_pending" - a separate status
+        // alongside "finished", not a replacement (confirmed with the user).
+        // Deliberately not season_number > 0 only: an unwatched special counts as
+        // "pending" here too, even though it never decides "finished" itself.
         $hasUnwatchedAired = '
             EXISTS (
                 SELECT 1
@@ -449,8 +380,7 @@ class Watchlist extends Model
                 ) DESC
                 LIMIT :limit OFFSET :offset
             ',
-            // a subset of 'finished' above, not a different definition of
-            // it - see $hasUnwatchedAired's own docblock
+            // subset of 'finished' above, not a different definition - see $hasUnwatchedAired's docblock
             'finished_pending' => '
                 SELECT s.*, sl.name, sl.overview
                 FROM user_serie_watchlist w
@@ -490,11 +420,9 @@ class Watchlist extends Model
 
     private function finalizeRows(array $rows, int $idUser, int $idAppacmanLang): array
     {
-        // `image` (poster) and `background` (fanart) both go out as-is now
-        // - the landscape watchlist row only ever wanted the fanart, but
-        // the app's "My series" poster grid (same endpoint, different
-        // screen) needs the actual poster, so neither can overwrite the
-        // other any more
+        // image (poster) and background (fanart) both go out as-is - the poster grid
+        // needs image while the landscape row needs background, so neither can
+        // overwrite the other
         $progress = (new Episode())->watchProgressForSeries(
             $idUser,
             array_map(static fn(array $r): int => (int) $r['id_serie'], $rows),
@@ -518,19 +446,15 @@ class Watchlist extends Model
             $row['next_episode_name']   = $next !== null
                 ? ($next['name'] ?: $next['default_name'])
                 : null;
-            // lets the watchlist row mark this one specific episode watched
-            // directly (same endpoint the series detail screen's own
-            // episode rows already use), without a second lookup
+            // lets the watchlist row mark this episode watched directly, same endpoint
+            // series detail's episode rows already use
             $row['next_episode_tvdb_id'] = $next['tvdb_id'] ?? null;
             $row['remaining_episodes']  = count($remaining);
 
-            // only reachable for a "not started" series (listWatching()
-            // already drops every remaining_episodes = 0 row before it gets
-            // here) - distinguishes "hasn't premiered yet" from "already
-            // caught up", which look identical (next_episode = null,
-            // remaining_episodes = 0) without this: a not-started show can
-            // only have remaining_episodes = 0 because nothing's aired yet,
-            // since it's zero-watched by definition
+            // only reachable for a not-started series (listWatching() already drops
+            // remaining_episodes = 0 rows) - distinguishes "hasn't premiered yet" from
+            // "already caught up", which otherwise look identical (next_episode = null,
+            // remaining_episodes = 0)
             $row['premiere_in_days'] = $next === null
                 ? $this->daysUntilPremiere((int) $row['id_serie'])
                 : null;
@@ -541,23 +465,13 @@ class Watchlist extends Model
     }
 
     /**
-     * unwatched episodes of $idSerie strictly after the user's furthest
-     * watched one (by season/episode number), oldest of those first - NOT
-     * simply "every unwatched episode oldest first": a long-running show
-     * with an unwatched gap way back (an old season the user never got to,
-     * or an import that missed marking it) must not get permanently stuck
-     * offering that gap as "next episode" once the user is actually caught
-     * up several seasons further - only what's strictly after their current
-     * position counts as remaining. A user who's watched nothing yet has no
-     * "furthest watched" position, so every unwatched-aired episode counts,
-     * same as before. Season 0 (specials) is always excluded, same
-     * convention Series/Detail already uses for season_count: TheTVDB has
-     * no reliable field to tell a plot-relevant special apart from a
-     * clip-show/recap one (checked empirically against Lost and Euphoria -
-     * `airsBeforeSeason`/`airsBeforeEpisode`/`finaleType` are set
-     * inconsistently on both kinds in both shows), so there's no sound way
-     * to count only the specials that matter. Episodes not yet aired are
-     * excluded too - nothing to "watch" yet.
+     * Unwatched episodes of $idSerie strictly after the user's furthest watched one,
+     * oldest first - not simply "every unwatched episode": a gap way back in a
+     * long-running show must not get stuck being offered as "next episode" once the user
+     * is caught up further. Season 0 (specials) is always excluded, same as
+     * Series/Detail's season_count: TheTVDB has no reliable field to tell plot-relevant
+     * specials from clip-shows (checked empirically against Lost and Euphoria), so
+     * there's no sound way to count only the ones that matter.
      *
      * @return array<int, array{season_number: int, episode_number: int, name: ?string, default_name: ?string, tvdb_id: int}>
      */
@@ -595,11 +509,7 @@ class Watchlist extends Model
         return $this->mysql->query($sql, $params);
     }
 
-    /**
-     * days until the earliest still-upcoming aired date among $idSerie's
-     * regular episodes - null when there isn't one (already airing, ended,
-     * or TheTVDB just doesn't have a date yet)
-     */
+    /** Days until the earliest upcoming aired date - null when there isn't one (already airing, ended, or no date yet) */
     private function daysUntilPremiere(int $idSerie): ?int
     {
         $sql    = '

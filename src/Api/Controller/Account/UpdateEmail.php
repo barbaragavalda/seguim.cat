@@ -13,11 +13,10 @@ use Webservice\Model\EmailChange;
 use Webservice\Model\User;
 
 /**
- * Only *requests* the change - the new address doesn't take effect until
- * confirmed with a code sent there (see ConfirmEmailChange), so a stolen
- * or shared-device session token can't permanently hijack an account by
- * pointing it at an attacker-controlled address. A heads-up also goes to
- * the *current* email, in case the request itself wasn't legitimate.
+ * Only *requests* the change - it takes effect once confirmed via a code
+ * sent to the new address (see ConfirmEmailChange), so a stolen/shared
+ * session can't hijack the account. Also notifies the *current* email in
+ * case the request itself wasn't legitimate.
  */
 #[Route('/account/email', methods: ['POST'], name: 'api.account.update_email')]
 class UpdateEmail extends Controller
@@ -45,10 +44,8 @@ class UpdateEmail extends Controller
 
         $code = (new EmailChange())->create($this->user->getID(), $email);
 
-        // both emails go out in the account's own stored language (kept
-        // current by Account\UpdateLanguage), same reasoning as
-        // Webservice\Controller\ForgotPassword: not necessarily the current
-        // request's own Accept-Language
+        // sent in the account's own stored language (kept current by
+        // Account\UpdateLanguage), not necessarily this request's Accept-Language
         $culture = $this->language->getCulture($this->user->getInfo()['id_appacman_lang'] ?? null);
         $this->language->withCulture($culture, function () use ($email, $code) {
             $this->sendConfirmationCode($email, $code);
@@ -84,8 +81,7 @@ class UpdateEmail extends Controller
         try {
             (new Mail())->send(array(), array(array('email' => $to, 'name' => '')), $subject, $body);
         } catch (Throwable $e) {
-            // never surface a mail-sending/config problem to the client -
-            // same reasoning as ForgotPassword
+            // never surface a mail/config problem to the client - see ForgotPassword
             error_log('UpdateEmail: failed to send ' . $label . ' - ' . $e->getMessage());
         }
     }

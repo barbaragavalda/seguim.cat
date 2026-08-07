@@ -3,15 +3,11 @@
 namespace Web\Model;
 
 /**
- * All translatable copy for the public marketing site (Home, Privacy).
- * Catalan is the source/msgid language (Bootstrap::router() already calls
- * Language::initGettext() - bindtextdomain/textdomain('messenges') -
- * before any controller runs, same as the translated-URL-slug mechanism
- * AttributeRouteLoader::translatePath() relies on), so every string here
- * is wrapped in _() and resolves to the current request's locale via
- * locale/{es_ES,en_GB}/LC_MESSAGES/messenges.mo. No catalog exists for
- * ca_ES itself - gettext returns an unmatched msgid unchanged, which for
- * the source language is already correct.
+ * All translatable copy for the public marketing site. Catalan is the source/msgid
+ * language - every string is wrapped in _() and resolves via
+ * locale/{es_ES,en_GB}/LC_MESSAGES/messenges.mo. No catalog exists for ca_ES itself -
+ * gettext returns an unmatched msgid unchanged, which for the source language is already
+ * correct.
  */
 class Content
 {
@@ -22,11 +18,8 @@ class Content
             'ctaLabel'   => _("Accedeix a l'app"),
             'heroTitle'  => _('No perdis mai el fil del que mires'),
             'heroBody'   => _("Seguim! t'ajuda a fer un seguiment de les sèries i pel·lícules que mires: marca capítols vistos, desa els teus favorits i no perdis mai el fil de què t'has de veure."),
-            // required content, not just nice-to-have - Google's OAuth
-            // verification specifically checks that the app's homepage
-            // explains *both* what the app does *and* how it uses the
-            // Google user data it requests (Sign in with Google), not just
-            // the first one
+            // required, not nice-to-have - Google's OAuth verification checks that the
+            // homepage explains both what the app does and how it uses Google user data
             'googleNote' => _("Si t'hi apuntes amb Google, només fem servir el teu compte per identificar-te — mai accedim a res més."),
             'features'  => array(
                 array('icon' => 'check', 'title' => _('Marca capítols vistos'), 'body' => _('Un toc i ja saps per on vas.')),

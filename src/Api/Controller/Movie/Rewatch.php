@@ -9,10 +9,8 @@ use Api\Model\WatchedMovie;
 use Core\Routing\Attribute\Route;
 
 /**
- * Unlike Watch (POST /movies/{tvdbId}/watched), always records a new watch
- * event even if the movie is already watched - see
- * WatchedMovie::markRewatched(). This is what lets a movie be "guardada com
- * a vista múltiples vegades"
+ * Unlike Watch, always records a new watch event even if the movie is
+ * already watched - see WatchedMovie::markRewatched().
  */
 #[Route('/movies/{tvdbId}/rewatch', methods: ['POST'], name: 'api.movie.rewatch', requirements: ['tvdbId' => '\d+'])]
 class Rewatch extends Controller

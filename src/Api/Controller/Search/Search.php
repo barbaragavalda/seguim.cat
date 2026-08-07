@@ -12,12 +12,10 @@ use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
 
 /**
- * Unified series+movie search backing the app's single search screen -
- * Series\Search (/series/search) and Movie\Search (/movies/search) stay
- * type-scoped for flows that only make sense for one kind (e.g. adding a
- * series to a user_list), this is the general-purpose one. Each result
- * already carries its own `type` ("series"/"movie") so the client can route
- * to the right detail screen without a second lookup
+ * Series\Search and Movie\Search stay type-scoped for flows that only make
+ * sense for one kind (e.g. adding a series to a user_list) - this is the
+ * general-purpose one. Each result carries its own `type` so the client
+ * can route without a second lookup.
  */
 #[Route('/search', methods: ['GET'], name: 'api.search')]
 class Search extends Controller
@@ -47,10 +45,8 @@ class Search extends Controller
         $result = $this->client->searchAll($query, $page, $tvdbLanguageCode);
         $results = $result['results'];
 
-        // only possible when the caller sent a real user token instead of
-        // the app's shared one (requiresUserToken() is false so both are
-        // accepted) - an anonymous/logged-out search has no user to
-        // compute watch progress for, so results go out unchanged
+        // only true when a real user token was sent (requiresUserToken() is false so the
+        // shared one is also accepted) - no user means no watch progress to compute
         if ($this->user !== null) {
             $results = $this->withWatchProgress($results);
         }
@@ -60,10 +56,8 @@ class Search extends Controller
     }
 
     /**
-     * attaches watched_episodes/total_episodes to every series-type result
-     * that's already synced locally (a never-opened series has no episode
-     * data to compute against, so it's left alone - the client treats a
-     * missing pair as "no progress bar", not "0%")
+     * Attaches watched/total episodes to already-synced series results only
+     * - the client treats a missing pair as "no progress bar", not "0%".
      */
     private function withWatchProgress(array $results): array
     {

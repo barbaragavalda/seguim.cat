@@ -30,9 +30,7 @@ class AddSerie extends Controller
             return;
         }
 
-        // sync() first so user_list_serie always points at a real local
-        // series row, even if this is the first time anyone's touched it -
-        // same reasoning as Watchlist/Add
+        // sync() first so user_list_serie always points at a real row, even on first touch - same reasoning as Watchlist/Add
         $info = (new Series())->sync($tvdbId, $this->client);
         if (empty($info)) {
             $this->error = '404';

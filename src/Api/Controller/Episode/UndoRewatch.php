@@ -8,10 +8,9 @@ use Api\Model\WatchedEpisode;
 use Core\Routing\Attribute\Route;
 
 /**
- * The inverse of Rewatch (POST /episode/{tvdbId}/rewatch) - collapses back
- * down to a single watch event rather than adding one. Unlike Unwatch
- * (DELETE /episode/{tvdbId}/watched), this doesn't fully unwatch the
- * episode - see WatchedEpisode::resetToSingleWatch()
+ * The inverse of Rewatch - collapses back to a single watch event rather
+ * than adding one. Unlike Unwatch, doesn't fully unwatch the episode -
+ * see WatchedEpisode::resetToSingleWatch()
  */
 #[Route('/episode/{tvdbId}/rewatch', methods: ['DELETE'], name: 'api.episode.undo_rewatch', requirements: ['tvdbId' => '\d+'])]
 class UndoRewatch extends Controller

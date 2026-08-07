@@ -5,68 +5,44 @@ namespace Api\Model\TvTimeImport;
 use Api\Model\TheTvdb\Client;
 
 /**
- * Resolves a TV Time movie entry (name + optional expected release year) to
- * a TheTVDB movie id via search. Unlike series (tv_show_id is TheTVDB's own
- * id directly), TV Time's export has no id for movies at all - just
- * movie_name + release_date - so this is a genuine name-based match, with
- * real (if rare) risk of a wrong pick.
+ * Resolves a movie entry (name + optional expected release year) to a
+ * TheTVDB movie id via search. Unlike series, TV Time's export has no id
+ * for movies at all - just movie_name + release_date - so this is a
+ * genuine name-based match, with real (if rare) risk of a wrong pick.
+ * Confirmed against a real 120-title sample: ~79% matched with full
+ * confidence, ~16% ambiguous, the rest no result or a wrong release year
+ * on an otherwise-unique title (TV Time's release_date isn't always the
+ * original release year).
  *
- * Confirmed empirically against the user's own real export (a random
- * 120-title sample): ~79% matched with full confidence (a single exact
- * title match, whether or not the release year confirms it - see match()'s
- * own reasoning below), ~16% were ambiguous (more than one movie shares that
- * exact title and the year can't disambiguate them, or there's no year at
- * all to try), and the rest returned no result or a genuinely wrong year on
- * an otherwise-unique title (TV Time's own release_date isn't always the
- * original release year - confirmed for one title where it was off by
- * decades).
+ * Anything not a single confident match comes back 'ambiguous' (up to 5
+ * candidates) rather than 'no_match' whenever at least one same-name
+ * result exists - never auto-guessed (a same-titled remake picked wrong
+ * would be a silently wrong watch history); Processor::processMovies()
+ * persists these as MovieImportPending rows for the user to resolve by
+ * hand.
  *
- * Anything not a single confident match comes back as 'ambiguous' (with up
- * to 5 candidates) rather than 'no_match' whenever there's at least one
- * same-name TheTVDB result - never guessed automatically (a same-titled
- * remake picked wrong would be a silently incorrect watch history), but also
- * never just dropped: Processor::processMovies() persists these as
- * Api\Model\MovieImportPending rows for the user to resolve by hand later
- * (pick the right poster, or dismiss) - same pattern several other TV Time
- * migration tools (e.g. the open-source "rewatch" tracker) converged on
- * independently, since a human glancing at a poster+year disambiguates
- * instantly in a way no automated heuristic can guarantee.
+ * TheTVDB's search sometimes returns nothing for a title that genuinely
+ * exists under that exact name (e.g. "Harry Potter and the Half-Blood
+ * Prince" returns zero results) - findCandidates() retries with loosened
+ * queries (colon/dash split, dropping "and"/"the") whenever the first
+ * search is empty; every fallback result is still filtered by an exact
+ * match against the *original* title, so this can only find a missed
+ * title, never introduce a wrong one.
  *
- * TheTVDB's own search endpoint sometimes returns *nothing at all* for a
- * long exact title that genuinely exists under that literal name - confirmed
- * empirically ("Harry Potter and the Half-Blood Prince" as a query returns
- * zero results, even though TheTVDB has a movie with exactly that name;
- * dropping "and"/"the", or querying just the part before/after a colon or
- * dash, reliably surfaces it instead). findCandidates() retries with those
- * loosened queries whenever the first search comes back empty - this can
- * only ever *find* a title TheTVDB's own search missed, never introduce a
- * wrong one, since every fallback attempt is still filtered by an exact
- * match against the *original* full title, not the shortened query used to
- * ask TheTVDB.
- *
- * When even the loosened queries find no *exact*-name hit, this falls back
- * once more to a fuzzy word-overlap heuristic (inspired by the open-source
- * TvTimeToTrakt's own Title.matches() - a >50% word-overlap rule it reports
- * "seems to improve automation, and reduce manual selection") against the
- * plain search's own raw results: TheTVDB's search can return a real match
- * whose own title text simply isn't a literal match (a different subtitle,
- * punctuation, or a translation TheTVDB doesn't carry), which the exact
- * pass above would otherwise drop as 'no_match' with nothing to show at
- * all. Unlike an exact match, a fuzzy hit is never trusted automatically -
- * see match()'s own $isFuzzy handling - a coincidental word overlap is a
- * real (if smaller) risk of a wrong pick, so it always goes through the
- * resolution screen even when it's the only candidate found.
+ * When even loosened queries find no exact-name hit, this falls back to a
+ * fuzzy word-overlap heuristic (>50% of words in common, against the plain
+ * search's raw results) for a real match whose title text isn't a literal
+ * match (different subtitle, punctuation, missing translation). A fuzzy
+ * hit is never trusted automatically (see $isFuzzy in match()) - it always
+ * goes through the resolution screen, even alone.
  */
 final class MovieMatcher
 {
 
     /**
-     * $preferredLanguage (TheTVDB's own 3-letter code, e.g. 'cat'/'spa') is
-     * only used for a candidate's own *display* name (toCandidateList()
-     * below) - matching itself already checks every translation TheTVDB
-     * has for a result regardless of this, since Client::performSearch()
-     * always returns the full `translations` map alongside whichever
-     * single language was requested (see its own docblock)
+     * $preferredLanguage only affects a candidate's display name
+     * (toCandidateList()) - matching itself already checks every
+     * translation Client::performSearch() returns, regardless of language.
      */
     public function __construct(private readonly Client $client, private readonly string $preferredLanguage = 'eng')
     {
@@ -89,16 +65,12 @@ final class MovieMatcher
             return array('status' => 'no_match', 'tvdb_id' => null, 'candidates' => array());
         }
 
-        // a single exact-title hit is trusted even without a year match - a
-        // real title collision AND TheTVDB returning only one of them as an
-        // "exact name" result is rare, and TV Time's own release_date is
-        // occasionally wrong for an otherwise correctly-matched title (see
-        // this class' own docblock) - a dead id here still gets caught right
-        // after by Processor::processMovies()'s own follow-up Movie::sync()
-        // call, so it doesn't need validating against TheTVDB again here.
-        // Never applies to a fuzzy hit though (see this class' own
-        // docblock on $isFuzzy) - that always falls through to the
-        // resolution screen below, even alone.
+        // a single exact-title hit is trusted even without a year match
+        // (collision + single exact result is rare, and release_date is
+        // occasionally wrong - see class docblock); a dead id here is still
+        // caught by Processor::processMovies()'s follow-up sync(). Never
+        // applies to a fuzzy hit, which always falls through to the
+        // resolution screen.
         if (!$isFuzzy && count($candidates) === 1) {
             return array(
                 'status'     => 'matched',
@@ -107,12 +79,9 @@ final class MovieMatcher
             );
         }
 
-        // more than one movie shares this exact title - TheTVDB's own search
-        // index can lag behind a merge/deletion on the actual record
-        // (confirmed empirically, same phenomenon as SeriesMatcher's own
-        // docblock), so drop anything dead before disambiguating by year or
-        // ever presenting it as a choice - a resolution-screen candidate the
-        // user picks should always actually resolve, never fail silently
+        // TheTVDB's search index can lag behind a merge/deletion (see
+        // SeriesMatcher's docblock) - drop dead candidates before
+        // disambiguating by year or presenting them as a choice.
         $liveCandidates = array_values(array_filter(
             $candidates,
             fn(array $c): bool => $this->existsOnTvdb((int) $c['tvdb_id'])
@@ -129,13 +98,10 @@ final class MovieMatcher
             );
         }
 
-        // only a matching release year can disambiguate further, and only
-        // if it does so uniquely - skipped entirely for a fuzzy result set:
-        // stacking two soft heuristics (fuzzy name + a loose year window)
-        // to auto-apply would compound their risk, and TV Time's own
-        // release_date is itself sometimes wrong (see this class' own
-        // docblock), which could filter out the actually-correct fuzzy
-        // candidate
+        // only a uniquely-matching release year can disambiguate further,
+        // skipped for a fuzzy result set - stacking two soft heuristics
+        // (fuzzy name + loose year) would compound their risk, and
+        // release_date is itself sometimes wrong (see class docblock)
         if (!$isFuzzy && $expectedYear !== null) {
             $yearMatches = array_values(array_filter(
                 $liveCandidates,
@@ -158,10 +124,8 @@ final class MovieMatcher
     }
 
     /**
-     * only called once a title search already came back with more than one
-     * same-named result (see match()) - the common single-hit case is left
-     * to Processor's own follow-up sync() call instead, to avoid an extra
-     * TheTVDB round trip for every confidently-matched movie
+     * Only called for a multi-result search; the common single-hit case
+     * skips this extra round trip (see match()).
      */
     private function existsOnTvdb(int $tvdbId): bool
     {
@@ -189,10 +153,8 @@ final class MovieMatcher
             }
         }
 
-        // nothing came back as an exact name match anywhere - see this
-        // class' own docblock on the fuzzy fallback tried here, against the
-        // plain search's own raw results only (not every fallback query's -
-        // diminishing returns for meaningfully more TheTVDB calls)
+        // no exact match anywhere - fuzzy fallback against the plain search's
+        // raw results only (not every fallback query's, diminishing returns)
         $fuzzyMatches = self::rankFuzzyMatches($results, $target);
         if (count($fuzzyMatches) > 0) {
             return array('items' => $fuzzyMatches, 'fuzzy' => true);
@@ -202,15 +164,11 @@ final class MovieMatcher
     }
 
     /**
-     * >50% of $target's own words found (as a substring) somewhere in a
-     * result's name - same threshold TvTimeToTrakt's own Title.matches()
-     * uses, applied here against $target's word count rather than the
-     * candidate's own (simpler, and avoids that a short candidate title
-     * trivially clears 50% against a long target). Ranked best-first and
-     * capped at 10 here (existsOnTvdb() calls are one TheTVDB round trip
-     * each, done later in match() only after this) - toCandidateList()'s
-     * own final slice(0, 5) still picks the best 5 that are actually alive,
-     * not just the best 5 raw-ranked ones.
+     * >50% of $target's own words found in a result's name, scored against
+     * $target's word count (not the candidate's, to avoid a short candidate
+     * trivially clearing 50%). Ranked best-first, capped at 10 here since
+     * existsOnTvdb() costs a round trip each - toCandidateList()'s final
+     * slice(0, 5) still picks the best 5 that are actually alive.
      *
      * @param array<int, array<string, mixed>> $results
      * @return array<int, array<string, mixed>>
@@ -241,12 +199,10 @@ final class MovieMatcher
     }
 
     /**
-     * Looser queries to retry TheTVDB's search with when the exact title
-     * finds nothing - see this class' own docblock. Splitting on a colon/
-     * dash covers a "Title: Subtitle" shape (try each half alone); dropping
-     * "and"/"the" covers titles like "Harry Potter and the X" specifically.
-     * Every candidate found this way still has to match the *original*
-     * $name exactly (see findCandidates()) before it counts for anything.
+     * Looser retry queries: splitting on a colon/dash covers a "Title:
+     * Subtitle" shape (try each half alone); dropping "and"/"the" covers
+     * "Harry Potter and the X"-style titles. Results still have to match
+     * the original $name exactly (see findCandidates()).
      *
      * @return array<int, string>
      */
@@ -292,10 +248,8 @@ final class MovieMatcher
      */
     private function toCandidateList(array $candidates): array
     {
-        // capped at 5 - a resolution screen showing every same-titled result
-        // TheTVDB has (sometimes a dozen+ for a very common title) would be
-        // useless; the search response is already relevance-ranked, so the
-        // first few are overwhelmingly the ones a real person would mean
+        // capped at 5 - showing every same-titled result (a dozen+ for a common
+        // title) would be useless; the search response is already relevance-ranked
         return array_map(
             fn(array $c): array => array(
                 'tvdb_id' => (int) $c['tvdb_id'],
@@ -308,10 +262,7 @@ final class MovieMatcher
     }
 
     /**
-     * The user's own language first, English next, and only then whatever
-     * TheTVDB calls this result's own primary/default name - a candidate
-     * poster's title should read in the language the user actually reads
-     * the app in whenever TheTVDB has a translation for it
+     * User's language first, English next, then TheTVDB's default name.
      *
      * @param array<string, mixed> $candidate
      */
@@ -339,9 +290,7 @@ final class MovieMatcher
 
     /**
      * ASCII-folds, lowercases and collapses punctuation/whitespace so
-     * "Mamma Mia!" and "mamma mia" (or an accented title against its plain
-     * transliteration) compare equal - same normalization confirmed
-     * empirically against the real export
+     * "Mamma Mia!" and an accented title compare equal to their plain form.
      */
     private static function normalize(string $name): string
     {

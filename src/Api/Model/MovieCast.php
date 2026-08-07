@@ -6,12 +6,10 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * top-billed cast for a movie's detail screen. TheTVDB's `characters` array
- * mixes actors with crew (director/writer/producer, distinguished by
- * peopleType) - only peopleType === 'Actor' rows are kept. A plain join
- * table against Api\Model\Person for the person's own identity (name/
- * image) - see that class' own docblock for why - keeping only the
- * per-casting data (character name, sort order) here.
+ * TheTVDB's `characters` array mixes actors with crew (director/writer/
+ * producer, distinguished by peopleType) - only peopleType === 'Actor' rows
+ * are kept. A join table against Api\Model\Person for identity (name/
+ * image); keeps only per-casting data (character name, sort order) here.
  */
 class MovieCast extends Model
 {
@@ -33,10 +31,8 @@ class MovieCast extends Model
 
     public function forMovie(int $idMovie, int $limit = self::DEFAULT_LIMIT): array
     {
-        // LEFT, not INNER - a character row with no linked tvdb_people_id
-        // (never seen in practice, but the column allows it) should still
-        // show up, just without a name/photo, rather than silently
-        // disappearing from the cast list
+        // LEFT, not INNER - a character with no linked person (allowed by
+        // the schema) should still show, just without a name/photo
         $sql    = '
             SELECT mc.tvdb_character_id, mc.tvdb_people_id, p.name AS person_name, mc.character_name, p.image
             FROM movie_cast mc

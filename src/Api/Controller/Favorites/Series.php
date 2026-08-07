@@ -7,10 +7,6 @@ use Api\Model\Episode;
 use Api\Model\SerieFavorite;
 use Core\Routing\Attribute\Route;
 
-/**
- * Paginated, most-recently-favorited-first - backs FavoritesDetailScreen's
- * series grid, reached from ProfileScreen's own "Sèries favorites" row.
- */
 #[Route('/favorites/series', methods: ['GET'], name: 'api.favorites.series')]
 class Series extends Controller
 {

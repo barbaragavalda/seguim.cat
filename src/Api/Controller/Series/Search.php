@@ -32,9 +32,8 @@ class Search extends Controller
         }
         $page = max(0, (int) ($_GET['page'] ?? 0));
 
-        // falls back to English (TheTVDB's own most-complete language) for
-        // an unresolved/unsupported culture, rather than leaving name/
-        // overview unset
+        // falls back to English (TheTVDB's most-complete language) for an unresolved/
+        // unsupported culture, rather than leaving name/overview unset
         $tvdbLanguageCode = Languages::tvdbCodeForCulture($this->config->getLanguage()) ?? 'eng';
 
         $result = $this->client->search($query, $page, $tvdbLanguageCode);

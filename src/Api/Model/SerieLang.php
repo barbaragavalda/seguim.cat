@@ -13,13 +13,10 @@ class SerieLang extends Model
     private const int TTL_SECONDS = 86400; // 24h
 
     /**
-     * fetches/refreshes just the requested language's translation if it's
-     * missing or stale, then returns it - deliberately not all of this
-     * app's languages at once, since a given request only ever needs its
-     * own resolved one. Returns ['name' => null, 'overview' => null] both
-     * for "TheTVDB has no translation in this language" and for an
-     * unsupported $culture, rather than distinguishing the two - the caller
-     * doesn't need to
+     * Refreshes just the requested language, not all of this app's
+     * languages at once, since a given request only needs its own. Returns
+     * ['name' => null, 'overview' => null] both for "no translation" and
+     * for an unsupported $culture - the caller doesn't need to distinguish.
      */
     public function syncForLanguage(int $idSerie, int $tvdbSerieId, string $culture, Client $client): array
     {

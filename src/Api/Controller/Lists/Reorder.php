@@ -7,10 +7,8 @@ use Api\Model\UserList;
 use Core\Routing\Attribute\Route;
 
 /**
- * Moves this list to right after `after` among the user's own lists, or to
- * the very front if `after` is omitted/empty - see UserList::moveAfter()'s
- * own docblock for why this "relative to a visible neighbor" shape was
- * chosen instead of submitting the full order (pagination)
+ * `after` omitted/empty moves to the front - see UserList::moveAfter() for
+ * why reordering is relative-to-neighbor, not full-order submission (pagination).
  */
 #[Route('/lists/{id}/reorder', methods: ['POST'], name: 'api.lists.reorder', requirements: ['id' => '\d+'])]
 class Reorder extends Controller

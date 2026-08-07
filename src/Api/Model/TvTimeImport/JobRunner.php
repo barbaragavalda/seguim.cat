@@ -9,14 +9,10 @@ use Throwable;
 use ZipArchive;
 
 /**
- * Advances one time-boxed batch of one job (see Processor::TIME_BUDGET_SECONDS)
- * - extract, parse, process, record, and mark done/failed if this batch
- * finished it. Shared by the two things that can trigger a batch:
- * Api\Controller\Import\TvTimeStatus (the Flutter app's own poll loop,
- * already running every few seconds while the import screen is open - this
- * is the primary driver, needs no external infrastructure at all) and
- * Api\Controller\Import\TvTimeProcess (a system cron, kept only as a
- * backstop for a job whose owner closed the app before it finished).
+ * Advances one time-boxed batch of a job (see Processor::TIME_BUDGET_SECONDS):
+ * extract, parse, process, record, and mark done/failed if finished.
+ * Triggered by the app's poll loop (the primary driver) or the cron
+ * backstop for a job whose owner closed the app early.
  */
 final class JobRunner
 {
@@ -27,50 +23,34 @@ final class JobRunner
 
     /**
      * @param array<string, mixed> $job a row from TvTimeImport with status
-     *                                  'pending' or 'processing' - the
-     *                                  caller is responsible for not calling
-     *                                  this on an already done/failed job
+     *                                  'pending' or 'processing'
      * @return bool whether the whole job finished as a result of this batch
      *              (always false if another request is already advancing
-     *              it right now - see acquireProcessingLock())
+     *              it - see acquireProcessingLock())
      */
     public function processOneBatch(array $job): bool
     {
-        // best-effort extra safety margin on top of Processor's own
-        // TIME_BUDGET_SECONDS (see that constant's own docblock on why it
-        // matters) - a no-op if the host disables this function, which
-        // some shared hosting does, but harmless either way. 55s leaves a
-        // 5s margin under Cdmon's own max_execution_time (raised to 60s -
-        // see Processor::TIME_BUDGET_SECONDS' own docblock for the story)
+        // safety margin under Processor::TIME_BUDGET_SECONDS; no-op if the
+        // host disables this function. 55s leaves 5s under Cdmon's 60s
+        // max_execution_time.
         @set_time_limit(55);
 
         $importModel = new TvTimeImportModel();
         $id          = (int) $job['id_user_import'];
 
         if (!$importModel->acquireProcessingLock($id)) {
-            // another request (another tab/device polling this same job,
-            // or the cron backstop) is already inside this method for this
-            // job right now - back off rather than redo the same work
-            // against a stale "already done" snapshot
+            // another request is already advancing this job - back off
+            // rather than redo work against a stale snapshot
             return false;
         }
 
-        // a true PHP fatal error (max_execution_time hit, memory exhausted,
-        // ...) isn't a Throwable the catch block below can see - without
-        // this, the request just dies mid-batch with the row still stuck on
-        // 'processing' and nothing in the DB explaining why (confirmed
-        // happening for real in production: a batch stopped advancing with
-        // no error recorded at all). error_clear_last() first so a stale
-        // error from earlier in the request (if any) isn't misattributed to
-        // this batch. $batchInProgress (flipped false in the outer finally
-        // below) keeps this from firing on a fatal error elsewhere in the
-        // same request *after* this batch already finished normally -
-        // register_shutdown_function runs at the very end of the whole
-        // request, not right after this method returns. Only fires for
-        // errors PHP itself terminates the script over - it does NOT fire
-        // if the OS/webserver kills the process outright (OOM killer,
-        // Apache's own hard timeout), so this is a best-effort improvement,
-        // not a complete guarantee
+        // a fatal error (timeout, OOM) isn't a catchable Throwable below;
+        // without this the row was left stuck on 'processing' with no
+        // explanation (happened in production). error_clear_last() avoids
+        // attributing a stale error to this batch; $batchInProgress skips
+        // this once the batch already finished normally (the shutdown
+        // function runs at the very end of the request). Can't catch an
+        // OS-level kill (OOM killer, Apache's hard timeout) - best effort.
         error_clear_last();
         $batchInProgress = true;
         register_shutdown_function(static function () use ($importModel, $id, &$batchInProgress): void {
@@ -119,10 +99,7 @@ final class JobRunner
                     'movies_pending'      => $batch['movies_pending'],
                     'movies_watched'      => $batch['movies_watched'],
                     'movies_rewatched'    => $batch['movies_rewatched'],
-                    // the export's fixed totals, from this same re-parse -
-                    // lets the client show a real progress fraction instead
-                    // of a plain spinner (see TvTimeImport::recordBatch()'s
-                    // own docblock)
+                    // fixed totals from this re-parse, for a real client-side progress fraction
                     'shows_total'         => count($parsed['shows']),
                     'movies_total'        => count($parsed['movies']),
                 ));
@@ -163,9 +140,8 @@ final class JobRunner
         return $dir;
     }
 
-    // only the extracted CSVs, re-created fresh every call - the zip
-    // itself is kept until the job actually finishes (or fails), since it's
-    // needed again on the next batch
+    // only the extracted CSVs - the zip itself is kept until the job
+    // finishes/fails, since it's needed again on the next batch
     private function removeExtractedFiles(?string $dir): void
     {
         if ($dir === null || !is_dir($dir)) {

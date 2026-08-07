@@ -6,12 +6,9 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * Job tracking for the TV Time GDPR-export importer. Processed by a
- * separate cron-triggered endpoint (Api\Controller\Import\TvTimeProcess)
- * rather than inline in the upload request, in resumable time-boxed
- * batches rather than one single call - syncing a whole TV Time history
- * from TheTVDB reliably outlasts even Apache's own reverse-proxy timeout,
- * confirmed empirically against a real ~970-show export.
+ * Job tracking for the TV Time GDPR-export importer, processed in resumable
+ * time-boxed batches - a full sync can outlast Apache's reverse-proxy
+ * timeout (confirmed on a real ~970-show export).
  */
 class TvTimeImport extends Model
 {
@@ -32,22 +29,12 @@ class TvTimeImport extends Model
     }
 
     /**
-     * Called from Api\Controller\Account\Delete (a job's zip/extracted
-     * files would otherwise be left orphaned on disk once the account is
-     * gone) and from Api\Controller\Import\TvTime, right before starting a
-     * fresh import - without this, an old job's own zip/extracted files
-     * just pile up on disk forever. Only ever touches user_import itself
-     * and its files - deliberately NOT user_movie_pending/user_serie_pending
-     * (those have no id_user_import column at all - see their own
-     * docblocks in db.sql on why a pending title has to outlive whichever
-     * job first created it, or a fresh import would re-ask the user about
-     * every title they already resolved/dismissed on a previous one -
-     * confirmed happening for real when this method used to delete them
-     * unconditionally, resolved rows included), nor user_serie_watchlist/
-     * user_episode_watched/user_movie_watchlist/user_movie_watched/
-     * user_list - those are the user's real, earned watch history from a
-     * *previous* import, not this job-tracking bookkeeping, and must
-     * survive a fresh re-import.
+     * Called on account deletion and before starting a fresh import, to
+     * avoid orphaned job files piling up on disk. Only touches user_import
+     * and its files - deliberately never user_movie_pending/
+     * user_serie_pending (must outlive the job that created them, or a
+     * re-import would re-ask about already-resolved titles) nor the user's
+     * actual watch history tables, which must survive a re-import.
      */
     public function removeAllForUser(int $idUser): void
     {
@@ -99,12 +86,9 @@ class TvTimeImport extends Model
     }
 
     /**
-     * this user's own latest not-yet-finished job, if any - lets the
-     * Flutter app recover from having no idea an import is still running:
-     * its own in-memory state (TvTimeImportController) doesn't survive the
-     * app process restarting (e.g. the phone killing a backgrounded app),
-     * so it can ask on its own instead of needing a remembered job id (see
-     * Api\Controller\Import\TvTimeCurrent)
+     * Lets the app recover an in-progress job after a restart, since its
+     * in-memory state (TvTimeImportController) doesn't survive the process
+     * being killed and relaunched.
      */
     public function findLatestInProgressForUser(int $idUser): ?array
     {
@@ -122,19 +106,13 @@ class TvTimeImport extends Model
     }
 
     /**
-     * Advisory lock scoped to one job, so at most one request is ever
-     * inside JobRunner::processOneBatch() for it at a time - more than one
-     * client can legitimately try to advance the very same job
-     * concurrently (the same import open in more than one tab/device, each
-     * independently resuming it - see Api\Controller\Import\TvTimeCurrent -
-     * or a poll racing the cron backstop). Without this, two overlapping
-     * calls both read the same not-yet-updated "already done" snapshot and
-     * redo the same shows - recordBatch()'s summary counts are summed, not
-     * deduped like processed_show_ids is, so this silently double-counts
-     * (confirmed live: shows_synced ended up higher than shows_total).
-     * MySQL auto-releases a named lock when the acquiring connection
-     * closes (end of this PHP request), so a crashed/killed request can't
-     * leave a job stuck locked forever - no manual cleanup path needed.
+     * Prevents concurrent requests (multi-tab/device resume, or a poll
+     * racing the cron backstop) from double-processing the same job -
+     * recordBatch()'s summary counts are additive, not deduped like
+     * processed_show_ids, so overlapping calls silently double-count
+     * (confirmed live: shows_synced exceeded shows_total). MySQL
+     * auto-releases the lock when this connection closes, so a
+     * crashed/killed request can't leave it stuck.
      */
     public function acquireProcessingLock(int $id): bool
     {
@@ -158,11 +136,9 @@ class TvTimeImport extends Model
     }
 
     /**
-     * the single oldest job that isn't finished yet (pending OR already
-     * processing - a job stays 'processing' across every batch until
-     * nothing's left, see Api\Controller\Import\TvTimeProcess), so a
-     * repeated cron tick keeps resuming the same job rather than starting a
-     * second one before the first is actually done
+     * The oldest not-yet-finished job (a job stays 'processing' across
+     * every batch until nothing's left), so a repeated cron tick resumes it
+     * rather than starting a second one before the first is done.
      */
     public function findNextToProcess(): ?array
     {
@@ -213,10 +189,8 @@ class TvTimeImport extends Model
     }
 
     /**
-     * merges this batch's newly-done show ids/list keys/movie names and
-     * summary counts into whatever's already recorded - read-then-write is
-     * fine here since only one batch of one job is ever processed at a time
-     * (no concurrent writers to race against)
+     * Merges this batch's results into what's already recorded; safe as
+     * read-then-write since only one batch of one job runs at a time.
      *
      * @param array<int>    $newDoneShowIds
      * @param array<string> $newDoneListKeys
@@ -227,10 +201,8 @@ class TvTimeImport extends Model
      *     movies_pending: int, movies_watched: int, movies_rewatched: int,
      *     shows_total: int, movies_total: int
      * } $summaryDelta shows_total/movies_total are the export's fixed
-     *   totals (from re-parsing the same zip - same numbers every batch),
-     *   not deltas - set directly rather than accumulated, unlike every
-     *   other key here. Lets the client show a real (not fake/estimated)
-     *   progress fraction - see Api\Model\TvTimeImport\JobRunner.
+     *   totals (same every batch) and are set directly, not accumulated
+     *   like the rest.
      */
     public function recordBatch(int $id, array $newDoneShowIds, array $newDoneListKeys, array $newDoneMovieKeys, array $summaryDelta): void
     {

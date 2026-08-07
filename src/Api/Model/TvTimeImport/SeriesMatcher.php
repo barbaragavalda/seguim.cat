@@ -5,33 +5,23 @@ namespace Api\Model\TvTimeImport;
 use Api\Model\TheTvdb\Client;
 
 /**
- * Resolves a TV Time show name to a TheTVDB series id via name search, used
- * only as a fallback when the export's own tv_show_id no longer resolves on
- * TheTVDB (Api\Model\Series::sync() returns empty for it). TheTVDB
- * periodically renumbers/merges series ids (the v3->v4 migration and
- * ordinary duplicate cleanups), leaving TV Time's old export pointing at a
- * dead id while the same series is findable by name under a new one -
- * confirmed empirically against the user's own real 22 shows_failed entries
- * (same phenomenon documented in the open-source "rewatch" tracker's own
- * code comments, e.g. Prison Break 75340 vs 360115).
+ * Resolves a show name to a TheTVDB id via name search - used only when the
+ * export's own tv_show_id no longer resolves (TheTVDB renumbers/merges ids
+ * over time, e.g. the v3->v4 migration; confirmed against 22 real
+ * shows_failed entries, e.g. Prison Break 75340 vs 360115).
  *
- * Mirrors MovieMatcher's own reasoning (never guess a same-titled ambiguous
- * result - queue it for the user instead - see its docblock for the fuller
- * rationale and the fallback-query retry logic duplicated below), but
- * simpler in one way: TV Time's export carries no reliable release year for
- * a series the way it does for a movie, so a same-titled collision can only
- * ever come back ambiguous, never auto-disambiguated by year. Also mirrors
- * its fuzzy word-overlap fallback (see MovieMatcher's own docblock) for
- * when even the loosened exact-name queries find nothing - never trusted as
- * a single confident match either, same $isFuzzy reasoning as there.
+ * Mirrors MovieMatcher: never guess an ambiguous same-titled result, queue
+ * it for the user instead (see MovieMatcher's docblock for the fuller
+ * rationale and the fallback/fuzzy logic duplicated below). Simpler in one
+ * way: a series has no reliable release year, so a collision can never be
+ * auto-disambiguated by year the way a movie's can.
  */
 final class SeriesMatcher
 {
 
     /**
-     * $preferredLanguage (TheTVDB's own 3-letter code) is only used for a
-     * candidate's own *display* name - see MovieMatcher's own docblock on
-     * why matching itself doesn't need it
+     * $preferredLanguage only affects a candidate's display name - see
+     * MovieMatcher's docblock on why matching itself doesn't need it.
      */
     public function __construct(private readonly Client $client, private readonly string $preferredLanguage = 'eng')
     {
@@ -54,14 +44,10 @@ final class SeriesMatcher
             return array('status' => 'no_match', 'tvdb_id' => null, 'candidates' => array());
         }
 
-        // a single exact-name hit is trusted, same as MovieMatcher::match()
-        // for the same reason (a real title collision AND TheTVDB returning
-        // only one of them as an exact-name result is rare) - a dead id here
-        // still gets caught right after by Processor::processRenamedShow()'s
-        // own follow-up Series::sync() call, so it doesn't need validating
-        // against TheTVDB again here. Never applies to a fuzzy hit though
-        // (see this class' own docblock) - that always falls through to the
-        // resolution screen below, even alone.
+        // a single exact-name hit is trusted (collision + single exact
+        // result is rare); a dead id here is still caught by
+        // Processor::processRenamedShow()'s follow-up sync(). Never applies
+        // to a fuzzy hit, which always falls through to the resolution screen.
         if (!$isFuzzy && count($candidates) === 1) {
             return array(
                 'status'     => 'matched',
@@ -70,13 +56,9 @@ final class SeriesMatcher
             );
         }
 
-        // more than one same-named result - TheTVDB's own search index can
-        // lag behind a merge/deletion on the actual record (confirmed
-        // empirically: e.g. "A Teacher"/"Wild Wild Country" each still
-        // search-match a tvdb_id that 404s on a direct GET /series/{id}), so
-        // drop anything dead before ever presenting it as a choice - a
-        // resolution-screen candidate the user picks should always actually
-        // resolve, never fail silently
+        // TheTVDB's search index can lag behind a merge/deletion (e.g.
+        // "A Teacher" still search-matches a tvdb_id that 404s directly) -
+        // drop dead candidates before ever presenting them as a choice.
         $liveCandidates = array_values(array_filter(
             $candidates,
             fn(array $c): bool => $this->existsOnTvdb((int) $c['tvdb_id'])
@@ -101,10 +83,8 @@ final class SeriesMatcher
     }
 
     /**
-     * only called once a name search already came back with more than one
-     * same-named result (see match()) - the common single-hit case is left
-     * to Processor's own follow-up sync() call instead, to avoid an extra
-     * TheTVDB round trip for every confidently-matched show
+     * Only called for a multi-result search; the common single-hit case
+     * skips this extra round trip (see match()).
      */
     private function existsOnTvdb(int $tvdbId): bool
     {
@@ -132,9 +112,7 @@ final class SeriesMatcher
             }
         }
 
-        // nothing came back as an exact name match anywhere - see
-        // MovieMatcher::rankFuzzyMatches()'s own docblock, applied here
-        // against the plain search's own raw results only
+        // no exact match anywhere - fall back to fuzzy ranking (see MovieMatcher::rankFuzzyMatches())
         $fuzzyMatches = self::rankFuzzyMatches($results, $target);
         if (count($fuzzyMatches) > 0) {
             return array('items' => $fuzzyMatches, 'fuzzy' => true);
@@ -144,9 +122,8 @@ final class SeriesMatcher
     }
 
     /**
-     * identical logic to MovieMatcher::rankFuzzyMatches() - see that
-     * class' own docblock; kept as its own copy for the same reason
-     * fallbackQueries() below is
+     * Identical to MovieMatcher::rankFuzzyMatches() - see that docblock;
+     * kept as its own copy for the same reason as fallbackQueries() below.
      *
      * @param array<int, array<string, mixed>> $results
      * @return array<int, array<string, mixed>>
@@ -177,12 +154,9 @@ final class SeriesMatcher
     }
 
     /**
-     * identical logic to MovieMatcher::fallbackQueries() - see that class'
-     * own docblock for why these specific loosenings (colon/dash split,
-     * dropping "and"/"the") - kept as its own copy here rather than a shared
-     * helper since the two matchers' candidate shapes/search scopes differ
-     * and MovieMatcher is already verified in production; not worth the risk
-     * of touching it to deduplicate ~15 lines
+     * Identical to MovieMatcher::fallbackQueries() (see its docblock for
+     * why these loosenings) - kept as its own copy rather than shared, to
+     * avoid touching the already-verified-in-production original.
      *
      * @return array<int, string>
      */

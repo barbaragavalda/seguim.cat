@@ -13,13 +13,10 @@ class EpisodeLang extends Model
     private const int TTL_SECONDS = 86400; // 24h
 
     /**
-     * fetches/refreshes every episode's translation for $culture in ONE
-     * TheTVDB call if stale (see Client::getSeriesEpisodesTranslated() -
-     * confirmed empirically to return all episodes at once, not one call
-     * per episode), then returns them keyed by id_episode (this project's
-     * own PK, not TheTVDB's). A missing key or ['name' => null, 'overview'
-     * => null] both mean "no translation for this episode in this
-     * language" - the caller doesn't need to tell the two apart
+     * Refreshes every episode's translation for $culture in ONE TheTVDB
+     * call if stale, keyed by id_episode. A missing key and a null
+     * name/overview both mean "no translation" - callers need not
+     * distinguish them.
      */
     public function syncForSerieAndLanguage(int $idSerie, int $tvdbSerieId, string $culture, Client $client): array
     {
@@ -35,10 +32,7 @@ class EpisodeLang extends Model
             foreach ($translated as $episode) {
                 $tvdbEpisodeId = $episode['id'] ?? null;
                 if ($tvdbEpisodeId === null || !isset($localEpisodeIds[$tvdbEpisodeId])) {
-                    // no local episode row yet for this one - Episode::
-                    // syncForSeries() runs first in the same request and
-                    // should already cover every episode, but skip rather
-                    // than fail if TheTVDB's two endpoints ever disagree
+                    // skip rather than fail if TheTVDB's two endpoints ever disagree
                     continue;
                 }
                 $this->upsert($localEpisodeIds[$tvdbEpisodeId], $idAppacmanLang, $episode);

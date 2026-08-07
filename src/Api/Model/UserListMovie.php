@@ -5,12 +5,7 @@ namespace Api\Model;
 use Core\Model\Model;
 use PDO;
 
-/**
- * The movies inside one specific user list (Api\Model\UserList) - exact
- * mirror of UserListSerie, own independent ordering from that list's own
- * series (same large-gap integer scheme - see UserList::moveAfter()'s own
- * docblock for why).
- */
+/** Movies inside one UserList - mirrors UserListSerie, own independent large-gap ordering, see UserList::moveAfter() */
 class UserListMovie extends Model
 {
 
@@ -18,12 +13,7 @@ class UserListMovie extends Model
 
     private const int GAP = 1000;
 
-    /**
-     * $createdAt preserves TV Time's own "added to list" date when called
-     * from the importer (Api\Model\TvTimeImport\Processor) - defaults to
-     * "now" for the regular Lists\AddMovie controller flow, same reasoning
-     * as UserListSerie::add()'s own $createdAt
-     */
+    /** $createdAt preserves TV Time's "added to list" date when set; defaults to now otherwise - see UserListSerie::add() */
     public function add(int $idUserList, int $idMovie, ?string $createdAt = null): void
     {
         if ($this->has($idUserList, $idMovie)) {
@@ -72,10 +62,7 @@ class UserListMovie extends Model
     }
 
     /**
-     * which of $idUser's own lists already contain $idMovie - for the
-     * "add to a list" picker (Lists\MembershipMovie). Scoped through
-     * user_list's own id_user, same ownership-check reasoning as
-     * UserListSerie::listIdsContainingSerie()
+     * Lists of $idUser's that already contain $idMovie - for the Lists\MembershipMovie picker.
      *
      * @return int[] id_user_list values
      */
@@ -130,15 +117,10 @@ class UserListMovie extends Model
     }
 
     /**
-     * the first $limit movies of this list, in its own manual order - used
-     * by Lists\Index to top up its poster-thumbnail preview once a list's
-     * own series (UserListSerie::previewForList(), tried first) don't fill
-     * it on their own. Not merged into one single by-date-added query
-     * across both tables: series and movies keep fully independent manual
-     * orderings (drag-and-drop reordering, own `ordering` column each), so
-     * there's no one shared "position" to sort a combined preview by
-     * without picking a different, disconnected-from-the-drag-handle
-     * ordering the user never actually set
+     * First $limit movies in list order - tops up Lists\Index's preview once
+     * UserListSerie::previewForList() doesn't fill it. Not a combined query: series and
+     * movies keep fully independent manual orderings, so there's no shared position to
+     * sort a combined preview by.
      *
      * @return array<int, array{tvdb_id: int, image: ?string}>
      */
@@ -159,12 +141,7 @@ class UserListMovie extends Model
         return $this->mysql->query($sql, $params);
     }
 
-    /**
-     * moves $idMovie to be right after $afterIdMovie within $idUserList, or
-     * to the front if $afterIdMovie is null - same pagination-safe
-     * reasoning as UserListSerie::moveAfter(). Returns false if
-     * $afterIdMovie isn't actually in this list
-     */
+    /** Moves $idMovie after $afterIdMovie (or to the front if null), same pagination-safe reasoning as UserListSerie::moveAfter(). Returns false if $afterIdMovie isn't in this list */
     public function moveAfter(int $idUserList, int $idMovie, ?int $afterIdMovie): bool
     {
         if ($afterIdMovie === $idMovie) {

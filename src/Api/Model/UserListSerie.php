@@ -5,11 +5,7 @@ namespace Api\Model;
 use Core\Model\Model;
 use PDO;
 
-/**
- * The series inside one specific user list (Api\Model\UserList). Ordering
- * within the list uses the same large-gap integer scheme - see
- * UserList::moveAfter()'s own docblock for why.
- */
+/** Series inside one UserList - ordering uses the same large-gap integer scheme, see UserList::moveAfter() */
 class UserListSerie extends Model
 {
 
@@ -17,12 +13,7 @@ class UserListSerie extends Model
 
     private const int GAP = 1000;
 
-    /**
-     * $createdAt preserves TV Time's own "added to list" date when called
-     * from the importer (Api\Model\TvTimeImport\Processor) - defaults to
-     * "now" for the regular Lists\AddSerie controller flow, same reasoning
-     * as Watchlist::addFromImport()'s own $createdAt
-     */
+    /** $createdAt preserves TV Time's "added to list" date when set; defaults to now otherwise - see Watchlist::addFromImport() */
     public function add(int $idUserList, int $idSerie, ?string $createdAt = null): void
     {
         if ($this->has($idUserList, $idSerie)) {
@@ -71,10 +62,7 @@ class UserListSerie extends Model
     }
 
     /**
-     * which of $idUser's own lists already contain $idSerie - for the
-     * "add to a list" picker (Lists\Membership). Scoped through user_list's
-     * own id_user rather than trusting a bare id_user_list list, same
-     * ownership-check reasoning as everywhere else in this feature.
+     * Lists of $idUser's that already contain $idSerie - for the Lists\Membership picker.
      *
      * @return int[] id_user_list values
      */
@@ -129,10 +117,8 @@ class UserListSerie extends Model
     }
 
     /**
-     * the first $limit series of this list, in its own manual order - for
-     * Lists\Index's own small poster-thumbnail preview (Api\Model\
-     * UserListMovie::previewForList()'s own docblock explains why series
-     * and movies aren't merged into one combined-by-date preview)
+     * First $limit series in list order - for Lists\Index's preview (see
+     * UserListMovie::previewForList() for why series/movies aren't merged into one).
      *
      * @return array<int, array{tvdb_id: int, image: ?string}>
      */
@@ -153,12 +139,7 @@ class UserListSerie extends Model
         return $this->mysql->query($sql, $params);
     }
 
-    /**
-     * moves $idSerie to be right after $afterIdSerie within $idUserList, or
-     * to the front if $afterIdSerie is null - same pagination-safe
-     * reasoning as UserList::moveAfter(). Returns false if $afterIdSerie
-     * isn't actually in this list
-     */
+    /** Moves $idSerie after $afterIdSerie (or to the front if null), same pagination-safe reasoning as UserList::moveAfter(). Returns false if $afterIdSerie isn't in this list */
     public function moveAfter(int $idUserList, int $idSerie, ?int $afterIdSerie): bool
     {
         if ($afterIdSerie === $idSerie) {

@@ -5,11 +5,7 @@ namespace Api\Model;
 use Core\Model\Model;
 use PDO;
 
-/**
- * A user's favorite series - see MovieFavorite's own docblock, identical
- * shape and reasoning (independent of user_serie_watchlist membership,
- * replaces TV Time's "Favorite Shows" export list).
- */
+/** A user's favorite series - independent of user_serie_watchlist membership. */
 class SerieFavorite extends Model
 {
 
@@ -28,11 +24,7 @@ class SerieFavorite extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * used only by the TV Time importer - preserves TV Time's own
-     * favorited-at date rather than "now", same reasoning as
-     * Watchlist::addFromImport()
-     */
+    /** Preserves the import's own favorited-at date instead of "now". */
     public function addFromImport(int $idUser, int $idSerie, ?string $createdAt = null): void
     {
         $sql    = '
@@ -96,12 +88,7 @@ class SerieFavorite extends Model
         return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
     }
 
-    /**
-     * the most recently favorited $limit series - see MovieFavorite::
-     * previewForUser()'s own docblock, identical reasoning
-     *
-     * @return array<int, array{tvdb_id: int, image: ?string}>
-     */
+    /** @return array<int, array{tvdb_id: int, image: ?string}> */
     public function previewForUser(int $idUser, int $limit): array
     {
         $sql    = '
@@ -120,11 +107,7 @@ class SerieFavorite extends Model
     }
 
     /**
-     * paginated, most recently favorited first - backs FavoritesDetailScreen
-     * (Favorites\Series), watch progress attached by the controller same as
-     * Lists\Show::withWatchProgress(). Un-enriched `s.*`, no per-language
-     * translation - same convention as UserListSerie::listForList() (the
-     * regular list-detail grid), which this mirrors
+     * Un-enriched `s.*`, no per-language translation.
      *
      * @return array{results: array, hasMore: bool}
      */

@@ -11,16 +11,12 @@ use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
 
 /**
- * The primary driver of an import, not just a status read - the Flutter app
- * already polls this every few seconds while the import screen is open (see
- * TvTimeImportController._poll() client-side), so a still-pending/processing
- * job gets one more time-boxed batch (see JobRunner) advanced right here
- * before its (now fresher) status is reported back, with no external cron
- * needed for the common case. Scoped to this specific job, not whichever
- * job happens to be globally oldest (unlike Api\Controller\Import\
- * TvTimeProcess, the cron-only backstop for an abandoned import) - so two
- * users importing at the same time each drive their own job forward from
- * their own poll, rather than one racing ahead of the other.
+ * The primary driver of an import, not just a status read - the app polls
+ * this every few seconds while the screen is open, so a pending/processing
+ * job gets one more time-boxed batch advanced here before its (fresher)
+ * status is reported, with no cron needed for the common case. Scoped to
+ * this one job (unlike TvTimeProcess, the cron-only backstop) so concurrent
+ * imports each advance from their own poll.
  */
 #[Route('/import/tvtime/{id}', methods: ['GET'], name: 'api.import.tvtime.status', requirements: ['id' => '\d+'])]
 class TvTimeStatus extends Controller

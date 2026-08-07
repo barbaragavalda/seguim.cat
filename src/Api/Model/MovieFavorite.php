@@ -5,12 +5,7 @@ namespace Api\Model;
 use Core\Model\Model;
 use PDO;
 
-/**
- * A user's favorite movies - independent of user_movie_watchlist
- * membership (Movie\Detail's own heart toggle works whether or not the
- * movie is being tracked). See db.sql's own comment on why this replaced
- * TV Time's "Favorite Movies" export list.
- */
+/** A user's favorite movies - independent of user_movie_watchlist membership. */
 class MovieFavorite extends Model
 {
 
@@ -29,11 +24,7 @@ class MovieFavorite extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * used only by the TV Time importer - preserves TV Time's own
-     * favorited-at date rather than "now", same reasoning as
-     * MovieWatchlist::addFromImport()
-     */
+    /** Preserves the import's own favorited-at date instead of "now". */
     public function addFromImport(int $idUser, int $idMovie, ?string $createdAt = null): void
     {
         $sql    = '
@@ -97,13 +88,7 @@ class MovieFavorite extends Model
         return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
     }
 
-    /**
-     * the most recently favorited $limit movies - for ProfileScreen's own
-     * small poster-thumbnail preview (Favorites\Summary), same idea as
-     * Lists\Index's own per-list preview
-     *
-     * @return array<int, array{tvdb_id: int, image: ?string}>
-     */
+    /** @return array<int, array{tvdb_id: int, image: ?string}> */
     public function previewForUser(int $idUser, int $limit): array
     {
         $sql    = '
@@ -122,10 +107,7 @@ class MovieFavorite extends Model
     }
 
     /**
-     * paginated, most recently favorited first - backs FavoritesDetailScreen
-     * (Favorites\Movies). Un-enriched `m.*`, no per-language translation -
-     * same convention as UserListMovie::listForList() (the regular
-     * list-detail grid), which this mirrors
+     * Un-enriched `m.*`, no per-language translation.
      *
      * @return array{results: array, hasMore: bool}
      */

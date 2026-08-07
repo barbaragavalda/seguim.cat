@@ -33,21 +33,15 @@ class Episode extends Model
     }
 
     /**
-     * returns the local mirror rows for the series' episodes, fetching/
-     * upserting them from TheTVDB first if missing or stale. Also
-     * reconciles removals: TheTVDB corrects itself over time (a duplicate
-     * episode gets merged, a season gets renumbered, ...), and this app
-     * should follow suit rather than keeping "ghost" episodes around
-     * forever - see removeStale()
+     * Fetches/upserts local mirror rows from TheTVDB if stale, and
+     * reconciles removals (TheTVDB renumbers/merges episodes over time).
      */
     public function syncForSeries(int $idSerie, int $tvdbSeriesId, Client $client): array
     {
         if ($this->isStale($idSerie)) {
             $episodes = $client->getSeriesEpisodes($tvdbSeriesId);
-            // an empty response is indistinguishable from "TheTVDB is
-            // unreachable right now" (see Client::request()) - never treat
-            // that as "this series really has zero episodes now" and wipe
-            // everything; only reconcile against a genuine, non-empty list
+            // an empty response is indistinguishable from TheTVDB being
+            // unreachable - only reconcile against a genuine, non-empty list
             if (!empty($episodes)) {
                 foreach ($episodes as $episode) {
                     $this->upsert($idSerie, $episode);
@@ -69,11 +63,8 @@ class Episode extends Model
     }
 
     /**
-     * deletes every local episode row for $idSerie whose tvdb_id isn't in
-     * $currentTvdbIds (the fresh, complete list TheTVDB just returned),
-     * along with any user's watch history for them - there's no undo, but
-     * an episode TheTVDB no longer lists isn't one this app should keep
-     * pretending exists
+     * Deletes local episodes not in $currentTvdbIds (TheTVDB's fresh,
+     * complete list), along with their watch history. No undo.
      *
      * @param int[] $currentTvdbIds
      */
@@ -149,8 +140,7 @@ class Episode extends Model
         $tvdbId          = $data['id'] ?? 0;
         $seasonNumber    = $data['seasonNumber'] ?? 0;
         $episodeNumber   = $data['number'] ?? 0;
-        // TheTVDB's own base record name/overview - fallback for when
-        // episode_lang has no translation for the app's current language
+        // fallback for when episode_lang has no translation for the current language
         $defaultName     = $data['name'] ?? null;
         $defaultOverview = $data['overview'] ?? null;
         $aired           = !empty($data['aired']) ? $data['aired'] : null;
@@ -179,14 +169,9 @@ class Episode extends Model
     }
 
     /**
-     * how many of each series' aired regular episodes $idUser has watched -
-     * batched across every id in $idSeries in one query rather than one per
-     * series, since Search/Lists results return many at once. Same
-     * "regular episodes only, already aired" definition as Watchlist::
-     * remainingEpisodes(). A series absent from the returned array has no
-     * aired regular episodes synced locally yet - that's "no data to show a
-     * progress bar for", not "0 watched"; the caller should treat it that
-     * way rather than rendering an empty bar.
+     * Batched across all of $idSeries in one query. A series absent from
+     * the result has no aired regular episodes synced locally yet - that's
+     * "no data", not "0 watched", and the caller should treat it that way.
      *
      * @param int[] $idSeries
      * @return array<int, array{watched: int, total: int}> keyed by id_serie
@@ -230,9 +215,7 @@ class Episode extends Model
 
     /**
      * Attaches watched_episodes/total_episodes to every row that already
-     * carries a real id_serie - used by Lists\Show and Favorites\Series,
-     * which both list already-synced series (unlike Search\Search, which
-     * still needs its own tvdb_id -> id_serie lookup first).
+     * carries a real id_serie.
      *
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>

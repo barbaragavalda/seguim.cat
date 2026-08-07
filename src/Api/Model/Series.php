@@ -33,11 +33,8 @@ class Series extends Model
     }
 
     /**
-     * which of $tvdbIds are already locally synced, and what id_serie each
-     * one maps to - for Search results, which only ever carry TheTVDB's own
-     * tvdb_id, never this app's own id_serie (unlike a list's own rows,
-     * which come straight from the `serie` table already). A tvdb_id
-     * missing from the returned map simply isn't synced locally yet.
+     * Which of $tvdbIds are already synced locally, and what id_serie each
+     * maps to. A tvdb_id missing from the result simply isn't synced yet.
      *
      * @param int[] $tvdbIds
      * @return array<int, int> tvdb_id => id_serie
@@ -70,11 +67,7 @@ class Series extends Model
         return $result;
     }
 
-    /**
-     * returns the local mirror row for $tvdbId, fetching/upserting it from
-     * TheTVDB first if it's missing or stale - this is the "on-demand lazy
-     * mirroring" behavior, no full-catalog sync involved
-     */
+    /** Lazy-mirrors $tvdbId from TheTVDB if missing/stale - no full-catalog sync. */
     public function sync(int $tvdbId, Client $client): array
     {
         $found = $this->loadWithTvdbId($tvdbId);
@@ -89,17 +82,13 @@ class Series extends Model
             return $this->info;
         }
 
-        // a separate TheTVDB endpoint (not part of the base series record
-        // above) - piggybacks on this same sync()/isStale() cycle rather
-        // than tracking its own staleness
+        // a separate TheTVDB endpoint - piggybacks on this same sync()/isStale() cycle
         $data['background'] = $client->getSeriesBackground($tvdbId);
 
         $this->upsert($tvdbId, $data);
         $this->loadWithTvdbId($tvdbId);
 
-        // same 24h sync cycle as the series' own base data - a full replace
-        // each cycle, same reasoning as Movie::sync()'s own genre/trailer
-        // sync
+        // full replace each cycle rather than incremental upserts
         (new SerieGenre())->syncForSerie((int) $this->info['id_serie'], $data['genres'] ?? array());
         (new SerieTrailer())->syncForSerie((int) $this->info['id_serie'], $data['trailers'] ?? array());
 
@@ -107,11 +96,9 @@ class Series extends Model
     }
 
     /**
-     * called by the controller once it's synced this series' episodes (see
-     * Api\Model\Episode::syncForSeries()) and counted the distinct regular
-     * seasons among them - kept as its own step rather than folded into
-     * upsert() because the count depends on episode data this model doesn't
-     * itself fetch
+     * Called once the caller has synced episodes and counted distinct
+     * regular seasons - kept separate from upsert() since that count
+     * depends on episode data this model doesn't itself fetch.
      */
     public function updateSeasonCount(int $seasonCount): void
     {
@@ -147,21 +134,16 @@ class Series extends Model
                 status = :status_upd, slug = :slug_upd,
                 average_runtime = :average_runtime_upd, synced_at = NOW()
         ';
-        // TheTVDB's own base record name/overview - normally the show's
-        // original-language text, used as a fallback when serie_lang has no
-        // translation for the app's current language (see Detail controller)
+        // fallback for when serie_lang has no translation for the current language
         $defaultName     = $data['name'] ?? null;
         $defaultOverview = $data['overview'] ?? null;
         $image      = $data['image'] ?? null;
         $background = $data['background'] ?? null;
-        // firstAired/lastAired are full dates ("2004-09-22") - only the
-        // year is stored, matching what was asked for; year_end reflects
-        // the latest aired episode's year for an ongoing/"Continuing"
-        // show, not necessarily a real end date
+        // only the year is stored; year_end reflects the latest aired
+        // episode's year for an ongoing show, not necessarily a real end date
         $yearStart = !empty($data['firstAired']) ? substr($data['firstAired'], 0, 4) : null;
         $yearEnd   = !empty($data['lastAired']) ? substr($data['lastAired'], 0, 4) : null;
-        // SeriesBaseRecord's status is an object ({id, name, recordType,
-        // keepUpdated}), not a plain string like on a /search SearchResult
+        // status is an object ({id, name, ...}), not a plain string like /search's SearchResult
         $status         = $data['status']['name'] ?? null;
         $slug           = $data['slug'] ?? null;
         $averageRuntime = $data['averageRuntime'] ?? null;

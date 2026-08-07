@@ -5,13 +5,7 @@ namespace Web\Model;
 use Core\Model\Model;
 use PDO;
 
-/**
- * A handful of random poster images (mixing series and movies) for the
- * landing page's decorative hero strip. `image` on both `serie`/`movie`
- * already stores TheTVDB's own absolute artwork URL (confirmed against
- * real dev data - https://artworks.thetvdb.com/...), so no local
- * proxying/caching is needed, just embed it directly.
- */
+/** Random poster images for the landing page's hero strip. `image` on serie/movie already stores TheTVDB's absolute artwork URL, so no local proxying/caching is needed */
 class Posters extends Model
 {
 

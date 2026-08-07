@@ -10,10 +10,7 @@ use Core\Controller\CacheManager;
 use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
 
-/**
- * Independent of Api\Model\MovieWatchlist membership - see AddSerie's own
- * docblock, identical reasoning.
- */
+/** Independent of MovieWatchlist membership - see AddSerie's own docblock */
 #[Route('/favorites/movies/{tvdbId}', methods: ['POST'], name: 'api.favorites.add_movie', requirements: ['tvdbId' => '\d+'])]
 class AddMovie extends Controller
 {

@@ -21,58 +21,30 @@ use Api\Model\Watchlist;
 use Webservice\Model\User;
 
 /**
- * Applies a parsed TV Time export (see Parser) to a real account: syncs
- * each show from TheTVDB using the same Series/Episode models the rest of
- * this app already uses (so there's no separate mirroring logic to keep in
- * sync), adds it to the watchlist with its archived/removed flags, marks
- * every matched episode watched/rewatched, and - once every show is done -
- * recreates the account's own custom lists.
+ * Applies a parsed TV Time export (see Parser) to a real account: syncs each
+ * show from TheTVDB, adds it to the watchlist, marks matched episodes
+ * watched/rewatched, then recreates the account's custom lists.
  *
- * Resumable and time-boxed rather than all-at-once: a full history can mean
- * many hundreds of shows, each several TheTVDB HTTP calls - confirmed
- * empirically to reliably outlast Apache's own 60s reverse-proxy timeout.
- * processBatch() stops itself well before that and reports which shows/
- * lists/movies it got through, so Api\Controller\Import\TvTimeProcess can
- * call it again on the next cron tick to keep going from where it left off.
- * Lists only start once every show is finished (shows are the far larger,
- * more failure-prone piece); each individual list is small enough in
- * practice (a real export's largest list is a few dozen series) that it's
- * always either fully created in one go or not started at all - only
- * "which lists are already done" needs to survive across batches, not
- * partial progress within a single list. Movies only start once shows AND
- * lists are both finished, same "biggest/most TheTVDB-call-heavy piece
- * first" reasoning, and use their own name-based resume key
- * (Api\Model\TvTimeImport\MovieMatcher - there's no TheTVDB id for a movie
- * in the export the way there is for a series).
+ * Resumable and time-boxed: a full history's TheTVDB calls reliably outlast
+ * Apache's 60s reverse-proxy timeout. processBatch() stops itself before
+ * that and reports progress, so JobRunner can call it again next batch.
+ * Lists only start once shows finish, movies only once shows AND lists
+ * finish - biggest/most TheTVDB-call-heavy piece first. Movies use a
+ * name-based resume key (MovieMatcher) since there's no TheTVDB id for a
+ * movie in the export.
  *
- * Safe to run more than once for the same account - each upload creates a
- * brand new Api\Model\TvTimeImport job with no memory of any earlier one
- * (a user re-exporting from TV Time, or just re-uploading, is a normal
- * thing to do), so every write this class makes is either a genuine upsert
- * (Watchlist/MovieWatchlist's own addFromImport(), WatchedEpisode/
- * WatchedMovie's own markWatched()) or has its own explicit dedup:
- * UserList lookup-or-create by TV Time's own list key (see
- * UserList::findByTvtimeKey()) instead of blindly creating a duplicate
- * list, and WatchedEpisode::syncRewatchesFromImport()/WatchedMovie::
- * syncRewatchFromImport() instead of a raw markRewatched() loop, which
- * would otherwise double-count every rewatch on a second import.
+ * Safe to run more than once for the same account: every write is either a
+ * genuine upsert or has explicit dedup (UserList::findByTvtimeKey() instead
+ * of duplicating a list, syncRewatchesFromImport()/syncRewatchFromImport()
+ * instead of a raw markRewatched() loop, which would double-count rewatches
+ * on a second import).
  */
 final class Processor
 {
 
-    // well under any of the three separate limits a batch has to fit
-    // inside: PHP's own max_execution_time (confirmed dev runs with this
-    // unlimited - IS_DEV's php.ini sets 0 - which is exactly why this never
-    // surfaced there; production's real limit was confirmed for real via
-    // JobRunner's own register_shutdown_function catch - it was a hard 10s,
-    // not the 45-then-20s this constant assumed, silently killing the
-    // request mid-batch before recordBatch() ever got to run. Now raised on
-    // Cdmon's own PHP config to 60s - see JobRunner::processOneBatch()'s
-    // own set_time_limit() call for the matching safety-margin value),
-    // Apache's own 60s reverse-proxy timeout, and a browser/CDN's own fetch
-    // timeout. 40s leaves ~15s of headroom under the 55s script limit for
-    // whichever TheTVDB call is in flight when the deadline is checked (a
-    // single call can itself take up to CURLOPT_TIMEOUT's own 15s)
+    // must fit under PHP's max_execution_time (see JobRunner::processOneBatch()'s set_time_limit()),
+    // Apache's 60s reverse-proxy timeout, and a browser/CDN fetch timeout; 40s leaves ~15s headroom
+    // for whichever TheTVDB call is in flight when the deadline is checked
     private const int TIME_BUDGET_SECONDS = 40;
 
     public function __construct(private readonly Client $client)
@@ -117,9 +89,6 @@ final class Processor
     public function processBatch(int $idUser, int $idTvtimeImport, array $parsed, array $alreadyDoneShows, array $alreadyDoneLists, array $alreadyDoneMovies): array
     {
         $deadline         = microtime(true) + self::TIME_BUDGET_SECONDS;
-        // resolved once per batch (not once per matcher/candidate) - see
-        // resolveTvdbLanguage()'s own docblock for why this needs a real
-        // DB lookup rather than something already on hand here
         $tvdbLanguageCode = $this->resolveTvdbLanguage($idUser);
 
         [$doneShowIds, $showsSynced, $showsFailed, $showsPending, $episodesWatched, $episodesRewatched, $showsFinished]
@@ -132,9 +101,7 @@ final class Processor
         $listSeriesPending = 0;
         $listMoviesPending = 0;
         $listsFinished     = true;
-        // only start lists once every show is done - shows are the far
-        // larger, more TheTVDB-call-heavy piece, and most list series are
-        // already synced by the time shows finish anyway
+        // only start lists once every show is done - shows are the larger, more TheTVDB-call-heavy piece
         if ($showsFinished) {
             [$doneListKeys, $listsCreated, $listSeriesAdded, $listMoviesAdded, $listSeriesPending, $listMoviesPending, $listsFinished]
                 = $this->processLists($idUser, $parsed, $alreadyDoneLists, $deadline, $tvdbLanguageCode);
@@ -147,8 +114,7 @@ final class Processor
         $moviesWatched   = 0;
         $moviesRewatched = 0;
         $moviesFinished  = true;
-        // movies only start once shows AND lists are both done, same
-        // "biggest piece first" reasoning as lists above
+        // movies only start once shows AND lists are both done
         if ($showsFinished && $listsFinished) {
             [$doneMovieKeys, $moviesSynced, $moviesUnmatched, $moviesPending, $moviesWatched, $moviesRewatched, $moviesFinished]
                 = $this->processMovies($idUser, $idTvtimeImport, $parsed, $alreadyDoneMovies, $deadline, $tvdbLanguageCode);
@@ -178,15 +144,8 @@ final class Processor
     }
 
     /**
-     * The importing user's own saved language preference (`user.
-     * id_appacman_lang`, same field Api\Controller\Account\UpdateLanguage
-     * writes) - a pending series/movie's candidate names should show up in
-     * whatever language that user actually reads the app in, falling back
-     * to English when TheTVDB has no translation for it, rather than
-     * always showing English regardless (this is a background/cron-
-     * triggered process, not a live request, so there's no
-     * Core\Utils\Config::getLanguage() request-language to reuse - it has
-     * to be looked up per user instead).
+     * No live request to read a language from here (background/cron), so this
+     * looks up the user's saved `id_appacman_lang` instead, falling back to English.
      */
     private function resolveTvdbLanguage(int $idUser): string
     {
@@ -242,10 +201,7 @@ final class Processor
                     $watchedEpisode
                 );
                 if ($handled === null) {
-                    // no show name survived anywhere in the export for this
-                    // id - nothing to search TheTVDB with, genuinely a dead
-                    // end (confirmed empirically: a couple of the user's own
-                    // real shows_failed entries have no name anywhere)
+                    // no show name survived anywhere in the export for this id - nothing to search TheTVDB with
                     $showsFailed[] = $tvdbSeriesId;
                 } elseif ($handled['pending']) {
                     $showsPending++;
@@ -266,24 +222,14 @@ final class Processor
             foreach ($parsed['watched'][$tvdbSeriesId] ?? array() as $tvdbEpisodeId => $watchedAt) {
                 $idEpisode = $idEpisodeByTvdbId[$tvdbEpisodeId] ?? null;
                 if ($idEpisode === null) {
-                    // an episode TV Time knows about that this series' current
-                    // TheTVDB episode list doesn't (renumbered/removed
-                    // upstream since the export was made) - skip rather than
-                    // fail the whole import over one stale reference
+                    // episode renumbered/removed upstream since the export was made - skip, don't fail the whole import
                     continue;
                 }
                 $watchedEpisode->markWatched($idUser, (int) $idEpisode, $watchedAt);
                 $episodesWatched++;
             }
 
-            // applied regardless of whether a base "first watch" was found
-            // above for the same episode - TV Time's own cpt still means
-            // "watched this many extra times", even when the export's
-            // per-episode logs never captured the very first watch (see
-            // Parser's own docblock on that gap). syncRewatchesFromImport()
-            // rather than a raw markRewatched() loop - see its own docblock
-            // on why a re-import (a separate, later job) needs this to stay
-            // idempotent
+            // applied even without a base "first watch" above - cpt still means "extra watches"
             foreach ($parsed['rewatches'][$tvdbSeriesId] ?? array() as $tvdbEpisodeId => $rewatch) {
                 $idEpisode = $idEpisodeByTvdbId[$tvdbEpisodeId] ?? null;
                 if ($idEpisode === null) {
@@ -298,11 +244,8 @@ final class Processor
                 );
             }
 
-            // the user's own watch history - not TheTVDB's status, not TV
-            // Time's own flags - decides whether a show counts as finished
-            // for watch_later/stopped_watching purposes: once the last
-            // aired regular episode is watched, deferring or having
-            // stopped on it no longer makes sense
+            // the user's own watch history, not TheTVDB's status or TV Time's flags, decides
+            // finished: once the last aired episode is watched, deferring/stopped no longer makes sense
             if ($watchlist->hasWatchedLastEpisode($idUser, $info['id_serie'])) {
                 $watchlist->setArchived($idUser, $info['id_serie'], false);
                 $watchlist->setRemoved($idUser, $info['id_serie'], false);
@@ -315,12 +258,9 @@ final class Processor
     }
 
     /**
-     * A show's own tvdb_id from the export came back empty from
-     * Series::sync() - TheTVDB has renumbered/merged it since the export was
-     * made (see SeriesMatcher's own docblock). Falls back to a name search:
-     * a single confident match is synced and applied immediately, same as
-     * the normal path; anything else (several same-titled candidates, or
-     * none) is queued as a SeriesImportPending row instead of guessed.
+     * The export's tvdb_id no longer resolves (see SeriesMatcher). Falls
+     * back to a name search: a confident match is synced immediately;
+     * anything else is queued as a SeriesImportPending row.
      *
      * @param array{archived: bool, removed: bool, created_at: ?string} $flags
      * @return null|array{pending: bool, episodes_watched: int, episodes_rewatched: int}
@@ -342,9 +282,7 @@ final class Processor
             return null;
         }
 
-        // already resolved (or dismissed) in an earlier import - see
-        // Processor::processMovies()'s own comment on the identical check
-        // there for why this has to happen before the matcher runs again
+        // already resolved (or dismissed) in an earlier import - don't re-derive the same question
         if ($pendingImport->isResolved($idUser, $showName)) {
             return array('pending' => false, 'episodes_watched' => 0, 'episodes_rewatched' => 0);
         }
@@ -361,9 +299,7 @@ final class Processor
         $newTvdbSeriesId = $result['tvdb_id'];
         $info = (new Series())->sync($newTvdbSeriesId, $this->client);
         if (empty($info)) {
-            // the match came from TheTVDB's own search a moment ago, so this
-            // is a rare transient failure - still worth a pending entry
-            // rather than losing the show's history outright
+            // rare transient failure right after a successful match - still worth a pending entry
             $pendingImport->createOrUpdate($idUser, $showName, $flags, $watchedEntries, $rewatchEntries, array());
             return array('pending' => true, 'episodes_watched' => 0, 'episodes_rewatched' => 0);
         }
@@ -402,8 +338,6 @@ final class Processor
             );
         }
 
-        // same "user's own watch history decides finished, not TheTVDB's
-        // status" reasoning as processShows() above
         if ($watchlist->hasWatchedLastEpisode($idUser, $info['id_serie'])) {
             $watchlist->setArchived($idUser, $info['id_serie'], false);
             $watchlist->setRemoved($idUser, $info['id_serie'], false);
@@ -423,10 +357,7 @@ final class Processor
         foreach ($watched as $tvdbEpisodeId => $watchedAt) {
             $numbers = $episodeNumbers[$tvdbEpisodeId] ?? null;
             if ($numbers === null) {
-                // no season/episode number survived for this one specific
-                // episode anywhere in the export - can't be re-matched
-                // against a different id's episode list, so it's dropped
-                // rather than guessed
+                // no season/episode number survived for this episode - can't be re-matched, so it's dropped
                 continue;
             }
             $entries[] = array('season' => $numbers['season'], 'episode' => $numbers['episode'], 'at' => $watchedAt);
@@ -482,25 +413,15 @@ final class Processor
                 break;
             }
 
-            // TV Time's own built-in "Favorite Shows"/"Favorite Movies"
-            // lists (fixed s_keys, confirmed present in every export)
-            // aren't a real user-created list at all - Series\Detail/
-            // Movie\Detail's own heart toggle is what this app calls
-            // favoriting instead, so these route straight to
-            // SerieFavorite/MovieFavorite rather than creating a UserList
-            // (see those classes' own docblocks)
+            // TV Time's built-in favorites lists map to the heart-toggle favoriting
+            // (SerieFavorite/MovieFavorite) instead of a real UserList
             if ($sKey === 'favorite-series' || $sKey === 'favorite-movies') {
                 $this->processFavoritesList($idUser, $list, $parsed, $seriesMatcher, $movieMatcher);
                 $doneListKeys[] = $sKey;
                 continue;
             }
 
-            // reuses the same list a previous, separate import job already
-            // created for this exact TV Time list (matched via its own
-            // stable s_key, not its name - see UserList::findByTvtimeKey()'s
-            // own docblock on why) rather than creating a duplicate; a
-            // brand new list still gets that key stored so a later import
-            // can find it too
+            // reuses the list a previous import already created for this s_key rather than duplicating it
             $existingList = $userList->findByTvtimeKey($idUser, $sKey);
             $idUserList   = $existingList !== null
                 ? (int) $existingList['id_user_list']
@@ -514,13 +435,7 @@ final class Processor
                     continue;
                 }
 
-                // dead/renumbered id - same phenomenon processShows()' own
-                // processRenamedShow() recovers from, so give list series
-                // the exact same name-search fallback instead of just
-                // dropping them (this used to be the single biggest source
-                // of "missing" list items: any show needing this recovery
-                // vanished from every list it was in, even though the show
-                // itself got fully recovered elsewhere in the same import)
+                // dead/renumbered id - same name-search fallback as processRenamedShow(), instead of dropping it
                 if ($this->resolveListSeriesByName($idUser, $tvdbSeriesId, $parsed, $seriesMatcher, $seriesPendingImport, $userListSerie, $idUserList, $addedAt)) {
                     $listSeriesAdded++;
                 } else {
@@ -528,21 +443,13 @@ final class Processor
                 }
             }
 
-            // a list movie has no TheTVDB id in the export (see Parser's own
-            // docblock) - matched by name exactly like the main movie
-            // import (reusing $parsed['movies']' own expected_year when this
-            // same title is also tracked there, for the same disambiguation
-            // MovieMatcher::match() already does elsewhere). An ambiguous/
-            // unmatched result used to be silently left out of the list;
-            // it's now linked to the same MovieImportPending row the main
-            // movie import itself would create for this exact title, so
-            // resolving it later (Api\Model\MovieImportPending::resolve())
-            // adds it to this list too instead of just the general watchlist
+            // a list movie has no TheTVDB id (see Parser's docblock) - matched by name like
+            // the main movie import, reusing $parsed['movies']'s expected_year when tracked
+            // there too. An unresolved match links to the same MovieImportPending row the
+            // main movie import would create for this title, so resolving it later
+            // (MovieImportPending::resolve()) adds it to this list too, not just the watchlist
             foreach ($list['movies'] as $movieName => $addedAt) {
-                // already resolved (or dismissed) in an earlier import -
-                // see Processor::processMovies()'s own comment on the
-                // identical check there. Same "won't re-add to a brand new
-                // list" caveat as resolveListSeriesByName()'s own comment
+                // already resolved/dismissed in an earlier import - see processMovies()'s identical check
                 if ($moviePendingImport->isResolved($idUser, $movieName)) {
                     continue;
                 }
@@ -562,15 +469,9 @@ final class Processor
                 $listMoviesPending++;
             }
 
-            // recovers the movies Parser::parseListMeta() found via list
-            // preview artwork but couldn't tie to a specific uuid/name (see
-            // that method's own docblock) - a direct tvdb-id sync, same as
-            // list series' own primary path just above, since there's no
-            // ambiguity left to resolve here. UserListMovie::add() is a
-            // no-op if $movieName's own match above already added this
-            // exact movie, so this can't create a duplicate list entry.
-            // No per-item added_at survives this recovery path, so the
-            // list's own created_at is the closest available date
+            // recovers movies Parser::parseListMeta() found via preview artwork but couldn't tie
+            // to a uuid/name - direct tvdb-id sync; UserListMovie::add() no-ops on a duplicate.
+            // No per-item added_at survives this path, so the list's own created_at is used
             foreach ($list['preview_movie_ids'] as $tvdbMovieId) {
                 $info = (new Movie())->sync($tvdbMovieId, $this->client);
                 if (!empty($info)) {
@@ -587,17 +488,10 @@ final class Processor
     }
 
     /**
-     * TV Time's "Favorite Shows"/"Favorite Movies" list, routed to
-     * SerieFavorite/MovieFavorite instead of a real UserList - see
-     * processLists()'s own call site for why. Same direct-id-then-name-
-     * search recovery as a regular list's own series (resolveListSeriesByName())
-     * and the same preview_movie_ids artwork recovery as a regular list's
-     * own movies, but deliberately with no further pending-resolution
-     * fallback of its own: unlike a real list, there's no separate screen a
-     * user would visit to resolve "some of my favorites" - an item that
-     * can't be resolved here is simply not favorited, rather than adding a
-     * whole parallel pending-favorite concept for what's typically a
-     * short, already-well-known-titles list
+     * Same direct-id-then-name-search recovery as a regular list
+     * (resolveListSeriesByName()), but deliberately with no pending-resolution
+     * fallback of its own: unlike a real list there's no screen to resolve
+     * "some of my favorites" - an unresolved item is simply not favorited.
      */
     private function processFavoritesList(int $idUser, array $list, array $parsed, SeriesMatcher $seriesMatcher, MovieMatcher $movieMatcher): void
     {
@@ -638,23 +532,15 @@ final class Processor
     }
 
     /**
-     * Recovers one list series whose own tvdb_id no longer resolves, same
-     * name-search fallback as processRenamedShow() - a confident match is
-     * synced and added to the list immediately; anything else queues the
-     * show as pending for this list (reusing whatever SeriesImportPending
-     * row already exists for this exact show_name - see createOrUpdate()'s
-     * own upsert-by-name key - so a show that's ALSO a dead/renumbered
-     * followed show only ever gets one pending row, just linked to more
-     * lists) rather than dropping it.
-     *
-     * Deliberately reuses the very same pending row (and its resolve() flow)
-     * a followed-but-dead show would get, even for a show that's list-only
-     * and was never actually followed in TV Time - meaning resolving it
-     * later also adds it to the general watchlist, not just this list. A
-     * genuinely list-only show is rare in practice (TV Time's own UI mostly
-     * surfaces already-tracked shows for adding to a list), and a second,
-     * parallel "resolve into a list but not the watchlist" flow isn't worth
-     * the added complexity for that edge case.
+     * Recovers one list series whose tvdb_id no longer resolves, same
+     * name-search fallback as processRenamedShow(). Reuses whatever
+     * SeriesImportPending row already exists for this show_name
+     * (createOrUpdate()'s upsert-by-name key), so a show that's also a
+     * dead/renumbered followed show gets one pending row, linked to more
+     * lists - meaning resolving it later adds it to the watchlist too, even
+     * for a show that was list-only and never actually followed. A
+     * separate "resolve into a list but not the watchlist" flow isn't
+     * worth the complexity for that rare edge case.
      *
      * @return bool true if the show ended up added to the list, false if
      *              it's now queued as pending instead
@@ -671,13 +557,8 @@ final class Processor
     ): bool {
         $showName = $parsed['show_names'][$tvdbSeriesId] ?? null;
 
-        // already resolved (or dismissed) in an earlier import - see
-        // Processor::processMovies()'s own comment on the identical check
-        // there. Doesn't re-add to *this* list if it's a new one since that
-        // resolution (resolve() only links whichever lists were linked to
-        // the pending row at the time) - rare enough (a list-only reference
-        // to an already-resolved dead-id show, added to a brand new list on
-        // a later import) not to chase further
+        // already resolved/dismissed in an earlier import (see processMovies()'s identical check) -
+        // won't re-add to *this* list if it's new, since resolve() only links lists linked at the time
         if ($showName !== null && $pendingImport->isResolved($idUser, $showName)) {
             return false;
         }
@@ -694,10 +575,7 @@ final class Processor
         }
 
         if ($showName === null) {
-            // no show name survived anywhere in the export for this id -
-            // nothing to search TheTVDB with, and no name to key a pending
-            // row on either (its own unique key is id_user+show_name) -
-            // genuinely nothing more can be done for this one
+            // no name to search TheTVDB with or to key a pending row on (its unique key is id_user+show_name)
             return false;
         }
 
@@ -716,16 +594,13 @@ final class Processor
     }
 
     /**
-     * Queues a list movie MovieMatcher couldn't confidently resolve as
-     * pending, linked to $idUserList - see resolveListSeriesByName()'s own
-     * docblock, identical reasoning (reuses whatever MovieImportPending row
-     * already exists for this exact title). $parsed['movies'] is checked
-     * for this same title's own watchlist/watched/rewatch snapshot - it's
-     * very often also tracked there independently of being listed, and
-     * without this the pending row would start out empty (no watch
-     * history) until Processor::processMovies() itself gets around to
-     * correcting it, possibly not until a later batch - a real risk of the
-     * user resolving it from the app in between and losing that history
+     * Queues a list movie MovieMatcher couldn't resolve, linked to
+     * $idUserList - reuses whatever MovieImportPending row already exists
+     * for this title, same as resolveListSeriesByName(). $parsed['movies']
+     * seeds the pending row with this title's own watch history (often
+     * tracked independently of being listed) so it isn't blank until
+     * processMovies() gets to it, possibly a later batch - avoiding a
+     * window where the user resolves it and loses that history.
      *
      * @param array<int, array{tvdb_id: int, name: string, year: ?string, image: ?string}> $candidates
      */
@@ -775,17 +650,12 @@ final class Processor
                 break;
             }
 
-            // $key is the resume/dedup key - Parser::parseMovies() gives a
-            // same-titled-but-different-film entry a disambiguated key
-            // ("Title (Year)") so it doesn't collide with another movie of
-            // the same title, but the actual title to search/show the user
-            // is always $entry['name']
+            // $key is the resume/dedup key (may be "Title (Year)"-disambiguated, see
+            // Parser::parseMovies()); the title to search/show the user is always $entry['name']
             $name = $entry['name'];
 
-            // already resolved (or dismissed) in an earlier import - the
-            // title is exactly as ambiguous now as it was then, so matching
-            // it again would only re-derive the same pending question the
-            // user already answered, see MovieImportPending's own docblock
+            // already resolved/dismissed in an earlier import - re-matching would only
+            // re-derive the same pending question the user already answered
             if ($pendingImport->isResolved($idUser, $name)) {
                 $doneMovieKeys[] = $key;
                 continue;
@@ -793,11 +663,7 @@ final class Processor
 
             $result = $matcher->match($name, $entry['expected_year']);
             if ($result['status'] !== 'matched') {
-                // not a single confident match (unmatched title, or several
-                // same-titled TheTVDB movies with no way to tell them apart)
-                // - never guessed, stored for the user to resolve by hand
-                // later instead (see Api\Model\MovieImportPending and
-                // MovieMatcher's own docblock)
+                // never guessed - stored for the user to resolve by hand instead (see MovieMatcher's docblock)
                 $pendingImport->createOrUpdate(
                     $idUser,
                     $name,
@@ -813,11 +679,7 @@ final class Processor
 
             $info = (new Movie())->sync($result['tvdb_id'], $this->client);
             if (empty($info)) {
-                // the match came from TheTVDB's own search a moment ago, so
-                // this is a rare transient failure rather than a bad id -
-                // still worth a pending entry (with no stored candidates,
-                // since the one candidate that mattered just failed to
-                // sync) rather than losing the title outright
+                // matched a moment ago, so this is a rare transient sync failure - still worth a pending entry
                 $pendingImport->createOrUpdate($idUser, $name, $entry['expected_year'], $entry, array());
                 $moviesUnmatched[] = $name;
                 $moviesPending++;
@@ -832,13 +694,8 @@ final class Processor
                 $watchedMovie->markWatched($idUser, $info['id_movie'], $entry['watched_at']);
                 $moviesWatched++;
             }
-            // each entry is one genuine extra watch with its own preserved
-            // timestamp - see Parser's own docblock on why this is more
-            // precise than processShows()'s rewatch handling (which only
-            // ever has a bare count, no per-event date, for episodes).
-            // syncRewatchFromImport() rather than a raw markRewatched() call
-            // - see its own docblock on why a re-import needs this to stay
-            // idempotent
+            // each entry is one genuine extra watch with its own timestamp (unlike
+            // processShows()'s bare-count episode rewatches, see Parser's docblock)
             foreach ($entry['rewatch_at'] as $rewatchAt) {
                 if ($watchedMovie->syncRewatchFromImport($idUser, $info['id_movie'], $rewatchAt, $idTvtimeImport)) {
                     $moviesRewatched++;

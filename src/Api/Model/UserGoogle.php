@@ -6,12 +6,9 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * Links a `user` row to the Google account it signed in with - see
- * db.sql's own docblock on `user_google` for the schema reasoning. Kept as
- * its own table (rather than a column on `user`, which belongs to the
- * shared Webservice\Model\User) so this Google-specific concern stays
- * entirely inside tv-tracker-local, same pattern as SerieFavorite/
- * MovieFavorite.
+ * Links a `user` row to its Google account. Kept as its own table (not a
+ * column on `user`, which belongs to the shared Webservice\Model\User) so
+ * this stays entirely inside tv-tracker-local.
  */
 class UserGoogle extends Model
 {
@@ -29,10 +26,6 @@ class UserGoogle extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * the id_user linked to $googleId, or null if this Google account has
-     * never signed in here before
-     */
     public function findUserId(string $googleId): ?int
     {
         $sql    = '

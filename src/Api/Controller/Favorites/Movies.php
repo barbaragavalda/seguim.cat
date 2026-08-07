@@ -6,10 +6,6 @@ use Api\Controller\Controller;
 use Api\Model\MovieFavorite;
 use Core\Routing\Attribute\Route;
 
-/**
- * Paginated, most-recently-favorited-first - backs FavoritesDetailScreen's
- * movies grid, reached from ProfileScreen's own "Pel·lícules favorites" row.
- */
 #[Route('/favorites/movies', methods: ['GET'], name: 'api.favorites.movies')]
 class Movies extends Controller
 {

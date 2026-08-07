@@ -3,10 +3,9 @@
 namespace Api\Model\TheTvdb;
 
 /**
- * id_appacman_lang (this project's own language lookup table -
- * config/projects.php's api sub-project languages, 1=ca, 2=es, 3=en) <->
- * TheTVDB's own 3-letter language code. Shared by Api\Model\SerieLang and
- * Api\Model\EpisodeLang so this map only lives in one place.
+ * id_appacman_lang (config/projects.php's language ids: 1=ca, 2=es, 3=en)
+ * <-> TheTVDB's own 3-letter code. Shared by SerieLang/EpisodeLang so this
+ * map only lives in one place.
  */
 final class Languages
 {
@@ -44,10 +43,10 @@ final class Languages
     }
 
     /**
-     * used by Api\Model\MovieContentRating::bestForCountry() - content
-     * ratings are tied to a country, not a language, but the app only has
-     * one culture per country pair (ca/es -> Spain, en -> USA) so this is
-     * still a plain lookup, not a real preference list
+     * Used by MovieContentRating::bestForCountry() - ratings are tied to a
+     * country, but the app only has one culture per country (ca/es ->
+     * Spain, en -> USA), so this stays a plain lookup, not a preference
+     * list.
      */
     public static function tvdbCountryForCulture(string $culture): ?string
     {

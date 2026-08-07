@@ -6,23 +6,15 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * TheTVDB's own genre taxonomy - shared between movies and series (same
- * ids, confirmed empirically), so movie_genre/serie_genre are plain join
- * tables against this one rather than each keeping their own copy of
- * slug/name. No per-language translation (confirmed empirically - GET
- * /genres and a genre's own name never vary with Accept-Language), so
- * `slug` is stored for the app to localize the label itself client-side,
- * falling back to the raw English `name` for a slug it doesn't have a
- * translation for yet.
+ * TheTVDB's genre taxonomy - shared between movies and series (same ids),
+ * so movie_genre/serie_genre are plain join tables against this one.
+ * `slug` lets the app localize the label client-side, falling back to the
+ * raw English `name` when no translation exists yet.
  */
 class Genre extends Model
 {
 
-    /**
-     * upserted rather than inserted since the same genre id is synced
-     * repeatedly (once per movie/series that has it) - a plain INSERT
-     * would fail every time after the first
-     */
+    /** Upserted, not inserted - the same genre id is synced once per movie/series that has it. */
     public function upsert(array $genre): void
     {
         if (empty($genre['id'])) {

@@ -28,12 +28,9 @@ class MovieWatchlist extends Model
     }
 
     /**
-     * used only by the TV Time importer (Api\Model\TvTimeImport\Processor) -
-     * preserves TV Time's own follow/to-watch date rather than "now", same
-     * reasoning as Watchlist::addFromImport(). Unlike that one, there are no
-     * archived/removed flags to keep in sync on a re-run - a plain INSERT
-     * IGNORE is enough, an existing row (and whatever created date it
-     * already has) is simply left alone
+     * Preserves the import's own follow date instead of "now". No
+     * archived/removed flags to reconcile here, so a plain INSERT IGNORE
+     * is enough - an existing row is simply left alone.
      */
     public function addFromImport(int $idUser, int $idMovie, ?string $createdAt = null): void
     {
@@ -90,13 +87,9 @@ class MovieWatchlist extends Model
     }
 
     /**
-     * unified, paginated "browse everything" view (profile "Les meves
-     * pel·lícules" + the Pel·lícules tab) - counterpart of Watchlist::
-     * listByStatus(), simplified: a movie has no episodes, so there's no
-     * "watching" partial state - just watched or not, same binary the
-     * rewatch feature already tracks. $search behaves the same as
-     * Watchlist::listByStatus() (LIKE on the translated name, falling back
-     * to default_name)
+     * A movie has no episodes, so there's no "watching" partial state -
+     * just watched or not. $search is a LIKE on the translated name,
+     * falling back to default_name.
      *
      * @return array{results: array, hasMore: bool}
      */
@@ -179,10 +172,8 @@ class MovieWatchlist extends Model
             $row['name']     = $row['name'] ?: $row['default_name'];
             $row['overview'] = $row['overview'] ?: $row['default_overview'];
 
-            // `image` (poster) and `background` (fanart) both go out as-is
-            // now - see Watchlist::finalizeRows()'s own comment, same
-            // reasoning (the "My movies" poster grid needs the poster,
-            // the landscape movies-tab row wants the fanart)
+            // `image` (poster) and `background` (fanart) both go out as-is -
+            // the poster grid needs the poster, the landscape row wants the fanart
 
             $watchCount        = $watchedMovie->watchCount($idUser, (int) $row['id_movie']);
             $row['watched']    = $watchCount > 0;

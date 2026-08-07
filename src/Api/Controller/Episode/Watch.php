@@ -18,16 +18,13 @@ class Watch extends Controller
 
         $episode = new Episode();
         if (!$episode->loadWithTvdbId($tvdbId)) {
-            // episode isn't locally known yet - the series detail endpoint
-            // is what mirrors episodes first, per this pass' lazy-mirror scope
+            // episode isn't locally known yet - the series detail endpoint mirrors episodes first
             $this->error = '404';
             return;
         }
 
-        // server-side backstop for the same rule the app's own UI already
-        // enforces (an unaired episode's watched-toggle isn't even
-        // tappable there) - this endpoint is a real request boundary, so it
-        // shouldn't just trust that every caller goes through that UI
+        // server-side backstop for the same rule the app's UI already enforces -
+        // this is a real request boundary, so it can't just trust the UI
         $aired = $episode->getInfo()['aired'] ?? null;
         if ($aired === null || $aired > date('Y-m-d')) {
             $this->error = 'This episode has not aired yet.';
@@ -37,16 +34,12 @@ class Watch extends Controller
         $watchlist = new Watchlist();
         $idSerie   = $episode->getInfo()['id_serie'];
 
-        // marking an episode watched implies the user is following this
-        // series, even if they never explicitly hit "+ Watchlist" first -
-        // add() is an INSERT IGNORE, so this is a no-op (and doesn't touch
-        // the archived/removed flags) when the series is already there
+        // implies the user follows this series even without an explicit "+
+        // Watchlist" tap - add() is INSERT IGNORE, so a no-op if already there
         $watchlist->add($this->user->getID(), $idSerie);
 
-        // "archived" ("veure més tard") means the user deliberately deferred
-        // this series - watching an episode from it is the literal opposite
-        // of that, so it clears on its own rather than leaving the user to
-        // notice and un-archive by hand. A no-op UPDATE when it wasn't set.
+        // "archived" means the user deliberately deferred the series; watching
+        // an episode is the literal opposite, so it auto-clears (no-op if unset)
         $watchlist->setArchived($this->user->getID(), $idSerie, false);
 
         (new WatchedEpisode())->markWatched($this->user->getID(), $episode->getInfo()['id_episode']);

@@ -7,11 +7,7 @@ use Api\Model\MovieWatchlist;
 use Api\Model\TheTvdb\Languages;
 use Core\Routing\Attribute\Route;
 
-/**
- * Unified, filterable "browse everything" view for movies - counterpart of
- * Watchlist\Index for series, backing both the "Pel·lícules" tab and the
- * profile's "Les meves pel·lícules" search
- */
+/** Movie counterpart of Watchlist\Index - see its own docblock */
 #[Route('/movies/watchlist', methods: ['GET'], name: 'api.movie_watchlist.index')]
 class Index extends Controller
 {

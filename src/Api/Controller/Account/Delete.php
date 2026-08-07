@@ -20,13 +20,10 @@ use Webservice\Model\User;
 use Webservice\Model\UserToken;
 
 /**
- * Overrides Webservice\Controller\DeleteAccount (same path/method - a
- * project's own routes are loaded before a vendor package's and win on
- * collision, see Core\Bootstrap::loadRoutes()) because that vendor
- * controller only knows about the user/user_token schema it owns - it has
- * no idea this project also keeps its own per-user rows in user_serie_watchlist/
- * user_episode_watched/user_import/user_list/user_movie_watchlist/
- * user_movie_watched, which were otherwise left orphaned after a delete
+ * Overrides Webservice\Controller\DeleteAccount (project routes win on
+ * collision, see Core\Bootstrap::loadRoutes()) - unlike that vendor
+ * controller, this also cleans up this project's own per-user tables,
+ * which would otherwise be left orphaned.
  */
 #[Route('/account', methods: ['DELETE'], name: 'api.account.delete')]
 class Delete extends Controller

@@ -28,12 +28,7 @@ class ChangePassword extends Controller
             return;
         }
 
-        // this request already carries a valid session token, but that
-        // alone isn't proof the caller knows the account's actual password
-        // (a stolen/shared-device token would still pass) - requiring it
-        // here too is what makes this safe to expose with no extra
-        // out-of-band confirmation step, unlike Webservice\Controller\
-        // ResetPassword's emailed-code flow
+        // a valid session token alone isn't proof of knowing the password (stolen/shared device)
         if (!$this->user->verifyPassword($currentPassword)) {
             $this->error = $this->translate('Current password is incorrect.');
             return;
@@ -41,11 +36,7 @@ class ChangePassword extends Controller
 
         $this->user->updatePassword($newPassword);
 
-        // a changed password can mean the old one was known to someone it
-        // shouldn't have been - revoke every device's token, same reasoning
-        // as ResetPassword, then immediately re-issue one for *this* session
-        // so the device making the change isn't logged out for a change it
-        // just asked for itself
+        // revoke all devices in case the old password was compromised, then re-issue for this session
         (new UserToken())->revokeAllForUser($this->user->getID());
         $this->assign('token', (new UserToken())->issue($this->user->getID()));
     }

@@ -6,10 +6,9 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * unlike name/overview, TheTVDB doesn't expose one trailer translated N
- * ways - it returns a flat list of separate trailer entries, each already
- * tagged with its own `language`, so there's nothing to sync into a *_lang
- * table - bestForLanguage() below just picks among the rows already stored.
+ * Unlike name/overview, TheTVDB returns a flat list of trailers each
+ * already tagged with its own `language` - nothing to sync into a *_lang
+ * table, bestForLanguage() just picks among the rows already stored.
  */
 class MovieTrailer extends Model
 {

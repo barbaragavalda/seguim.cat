@@ -14,12 +14,7 @@ class TokenVerifier
     private const string TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
 
     /**
-     * Returns the verified Google account's id (`sub`) and email, or null
-     * if the token is invalid/expired, its audience isn't one of
-     * $allowedAudiences (our own app's client IDs - see config/google.php),
-     * or Google hasn't verified the email itself.
-     *
-     * @param string[] $allowedAudiences
+     * @param string[] $allowedAudiences our own app's client IDs
      * @return array{sub: string, email: string}|null
      */
     public function verify(string $idToken, array $allowedAudiences): ?array
@@ -39,10 +34,8 @@ class TokenVerifier
 
     /**
      * Deliberately not Core\Model\Utils\Curl - its make() unconditionally
-     * routes every request through a CURLOPT_PROXY of this app's own dev
-     * web server whenever IS_DEV is true, which breaks reaching a genuine
-     * third-party host like Google - same issue, same fix, as
-     * Api\Model\TheTvdb\Client::httpRequest()'s own docblock.
+     * proxies through this app's own dev server when IS_DEV is true, which
+     * breaks reaching a real third-party host like Google.
      *
      * @return array<string, mixed>
      */

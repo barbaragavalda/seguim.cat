@@ -13,13 +13,9 @@ use Webservice\Model\User;
 use Webservice\Model\UserToken;
 
 /**
- * "Sign in with Google" - a tv-tracker-local-only addition, not part of the
- * shared Webservice\Controller\{Login,Register} (those stay untouched, this
- * is purely additive). Verifies the ID token the Flutter app already
- * obtained from Google (see TokenVerifier), then either signs in an
- * already-linked account (user_google), links a matching-email account
- * signing in with Google for the first time, or registers a brand new one -
- * same three-way resolution any "sign in with X" flow needs.
+ * "Sign in with Google" - tv-tracker-local-only, doesn't touch the shared
+ * Webservice\Controller\{Login,Register}. Resolves to an existing
+ * user_google link, a matching-email account, or a new registration.
  */
 #[Route('/login/google', methods: ['POST'], name: 'api.login.google')]
 class Google extends Controller
@@ -56,15 +52,12 @@ class Google extends Controller
         if ($idUser === null) {
             $user = new User();
             if ($user->loadWithEmail($verified['email'])) {
-                // an existing password-based account signing in with Google
-                // for the first time - link it rather than creating a
-                // duplicate, same email either way
+                // existing password-based account, first Google sign-in - link instead of duplicating
                 $idUser = (int) $user->getInfo()['id_user'];
             } else {
                 $idAppacmanLang = $this->language->getLanguageID($this->config->getLanguage());
-                // the random password is never given to this user - Google
-                // is the only way into a Google-created account. User's own
-                // `password` column is NOT NULL, so it still needs a value
+                // random password: `password` column is NOT NULL but Google
+                // is the only way into a Google-created account
                 $idUser = $user->register(
                     $verified['email'],
                     bin2hex(random_bytes(32)),
@@ -84,10 +77,8 @@ class Google extends Controller
     }
 
     /**
-     * derives a username candidate from the email's local part (sanitized
-     * down to User::USERNAME_PATTERN's allowed charset), appending a
-     * numeric suffix until it's free - a Google sign-up has no username
-     * field of its own to ask for one up front
+     * Derives a username from the email's local part - Google sign-up has
+     * no username field of its own to ask for one up front.
      */
     private function generateUsername(string $email): string
     {

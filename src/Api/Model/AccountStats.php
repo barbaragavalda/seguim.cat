@@ -6,14 +6,9 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * profile screen's own summary counters. Watched counts are DISTINCT
- * episodes/movies, not raw row counts - user_episode_watched/
- * user_movie_watched have one row per watch *event* (a rewatch adds
- * another row), so a plain COUNT(*) would inflate these with rewatches
- * rather than reflecting how many distinct episodes/movies were ever seen.
- * Added counts are plain row counts - a watchlist row is unique per
- * (id_user, id_serie)/(id_user, id_movie) already, so there's nothing to
- * dedupe there.
+ * Watched counts use DISTINCT since watch tables have one row per watch
+ * event (a rewatch adds a row); added counts are plain row counts since
+ * watchlist rows are already unique per user.
  */
 class AccountStats extends Model
 {

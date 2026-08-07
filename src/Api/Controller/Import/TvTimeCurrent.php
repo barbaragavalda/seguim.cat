@@ -11,14 +11,11 @@ use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
 
 /**
- * Lets the Flutter app recover an in-progress import it has no memory of -
- * called once when TvTimeImportScreen opens with no known job id (a fresh
- * app process, e.g. after the phone killed a backgrounded app, loses
- * TvTimeImportController's in-memory state entirely). Unlike
- * Api\Controller\Import\TvTimeStatus (which needs an id already), this
- * finds the user's own latest not-yet-finished job by itself - and, same as
- * TvTimeStatus, advances it one batch before reporting, so simply opening
- * the screen again is enough to keep a forgotten import moving.
+ * Lets the app recover an in-progress import it has no memory of (e.g.
+ * after a backgrounded app process gets killed) - unlike TvTimeStatus
+ * (which needs an id already), this finds the user's latest not-yet-
+ * finished job by itself, and advances it one batch before reporting, same
+ * as TvTimeStatus.
  */
 #[Route('/import/tvtime/current', methods: ['GET'], name: 'api.import.tvtime.current')]
 class TvTimeCurrent extends Controller

@@ -5,10 +5,8 @@ namespace Api\Model\Concerns;
 use PDO;
 
 /**
- * Shared by Watchlist and MovieWatchlist - both page their language-scoped
- * (`id_appacman_lang`) listing query the same way, one row over PAGE_SIZE
- * to detect hasMore. Requires the using class to declare its own
- * `private const int PAGE_SIZE`.
+ * Fetches PAGE_SIZE+1 rows to detect hasMore. Requires the using class to
+ * declare `private const int PAGE_SIZE`.
  */
 trait PaginatesByLanguage
 {

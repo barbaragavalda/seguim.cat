@@ -10,10 +10,9 @@ use Core\Routing\Attribute\Route;
 use Core\Utils\Config;
 
 /**
- * The user picked which TheTVDB series a pending show actually is (from the
- * candidates shown, or any other tvdb_id if they searched separately) -
- * syncs each and replays the watchlist/watched/rewatch state that was
- * snapshotted at import time. See Api\Model\SeriesImportPending::resolve()
+ * The user picked which TheTVDB series a pending show actually is - syncs
+ * it and replays the watchlist/watched/rewatch state snapshotted at import
+ * time. See Api\Model\SeriesImportPending::resolve()
  */
 #[Route('/import/series/pending/{id}/resolve', methods: ['POST'], name: 'api.import.series.pending.resolve', requirements: ['id' => '\d+'])]
 class ResolvePendingSeries extends Controller
@@ -45,9 +44,8 @@ class ResolvePendingSeries extends Controller
         if ($resolved === null) {
             $this->error = '404';
         } elseif ($resolved === false) {
-            // the pending row is still there (see resolve()'s own docblock) -
-            // the user can pick a different candidate, or try the same one
-            // again once TheTVDB's data catches up
+            // row is still pending (see resolve()'s docblock) - user can retry
+            // or pick a different candidate once TheTVDB's data catches up
             $this->error = 'candidate_unavailable';
         }
     }

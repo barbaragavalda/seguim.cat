@@ -8,17 +8,15 @@ use Core\Routing\Attribute\Route;
 use ZipArchive;
 
 /**
- * Only stores the upload and queues a job - the actual sync against
- * TheTVDB (see Api\Controller\Import\TvTimeProcess) can take many minutes
- * for a full TV Time history, far longer than a single web request should
- * ever run.
+ * Only stores the upload and queues a job - the actual TheTVDB sync (see
+ * TvTimeProcess) can take many minutes, far longer than a single web
+ * request should run.
  */
 #[Route('/import/tvtime', methods: ['POST'], name: 'api.import.tvtime')]
 class TvTime extends Controller
 {
 
-    // generous for a personal export - the real one this was built against
-    // is ~15MB
+    // generous for a personal export - real-world exports run ~15MB
     private const int MAX_SIZE = 200 * 1024 * 1024;
 
     protected function run(): void
@@ -52,12 +50,9 @@ class TvTime extends Controller
         }
 
         $importModel = new TvTimeImport();
-        // clears out any previous job of this user's (done, failed, or
-        // abandoned mid-way) and its zip/extracted files, which would
-        // otherwise just keep piling up on disk - see removeAllForUser()'s
-        // own docblock on what this deliberately does NOT touch (the
-        // user's actual watch history, and any pending-resolution rows -
-        // both must survive a fresh re-import)
+        // clears any previous job of this user's (and its files) so they
+        // don't pile up on disk - deliberately leaves watch history and
+        // pending-resolution rows alone, see removeAllForUser()'s own docblock
         $importModel->removeAllForUser($this->user->getID());
 
         $id = $importModel->create($this->user->getID(), $path);

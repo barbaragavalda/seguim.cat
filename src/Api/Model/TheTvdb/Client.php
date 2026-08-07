@@ -11,10 +11,8 @@ class Client
     private const string BASE_URL = 'https://api4.thetvdb.com/v4';
 
     /**
-     * artwork type 15 = "Background" for a movie - confirmed via
-     * GET /artwork/types (recordType "movie"); NOT type 3, which is what
-     * Api\Model\Series::sync()/getSeriesBackground() use for a series -
-     * these two type ids are unrelated despite sharing the same English name
+     * artwork type 15 = "Background" for a movie (GET /artwork/types) - NOT
+     * type 3, which Series uses; same English name, unrelated ids
      */
     private const int MOVIE_BACKGROUND_ARTWORK_TYPE = 15;
 
@@ -44,13 +42,11 @@ class Client
     }
 
     /**
-     * omitting $type from the request entirely (see performSearch()) returns
-     * series and movies (and other TheTVDB record types) ranked together in
-     * one list - confirmed empirically each result still carries its own
-     * `type` field, so the caller can tell them apart without a second
-     * lookup. Used by the app's single top-level search, unlike search()/
-     * searchMovies() above which stay type-scoped for flows that only make
-     * sense for one kind (e.g. adding a series to a user_list)
+     * Omitting $type (see performSearch()) returns every TheTVDB record
+     * type ranked together, each still carrying its own `type` field to
+     * tell them apart. Used by the app's unified search; search()/
+     * searchMovies() stay type-scoped for flows that only make sense for
+     * one kind.
      */
     public function searchAll(string $query, int $page, string $tvdbLanguageCode): array
     {
@@ -58,14 +54,11 @@ class Client
     }
 
     /**
-     * $tvdbLanguageCode picks each result's name/overview out of its own
-     * inline `translations`/`overviews` maps (TheTVDB's search index already
-     * returns every language it has for a result, confirmed empirically -
-     * no separate per-result translation call needed here, unlike series/
-     * episode/movie detail) - falls back to the result's own primary-
-     * language name/overview if that specific language isn't in the map.
-     * $type is TheTVDB's own search type ('series'/'movie'), or null to
-     * search across every type at once (searchAll())
+     * $tvdbLanguageCode picks name/overview from the result's own inline
+     * `translations`/`overviews` maps (search results carry every language
+     * already, unlike series/episode/movie detail) - falls back to the
+     * primary-language name/overview if missing. $type is TheTVDB's search
+     * type ('series'/'movie'), or null for every type (searchAll()).
      */
     private function performSearch(string $query, int $page, ?string $type, string $tvdbLanguageCode): array
     {
@@ -77,13 +70,10 @@ class Client
         $results  = $response['data'] ?? array();
 
         if ($type === null) {
-            // an unrestricted search (searchAll()) returns every TheTVDB
-            // record type - company, person, etc. - not just series/movie;
-            // confirmed empirically (e.g. "Encanto" also matches "Encanto
-            // Enterprises", a company). The app's unified search only ever
-            // knows how to display/open these two kinds, so anything else
-            // is dropped here rather than leaking into the UI as a
-            // mislabeled series
+            // searchAll() returns every TheTVDB record type, not just
+            // series/movie (e.g. "Encanto" also matches "Encanto
+            // Enterprises", a company) - drop the rest, the UI only knows
+            // how to display these two kinds
             $results = array_values(array_filter(
                 $results,
                 fn(array $result): bool => in_array($result['type'] ?? null, array('series', 'movie'), true)
@@ -93,11 +83,9 @@ class Client
         foreach ($results as &$result) {
             $result['name']     = $result['translations'][$tvdbLanguageCode] ?? $result['name'] ?? null;
             $result['overview'] = $result['overviews'][$tvdbLanguageCode] ?? $result['overview'] ?? null;
-            // renamed to match serie.image/movie.image - no background/
-            // fanart field exists on a search result at all (confirmed
-            // empirically), and fetching one would mean a separate
-            // /artworks call per result; it only ever appears once a
-            // series/movie is actually opened (Detail, .background)
+            // renamed to match serie.image/movie.image - a search result
+            // has no background/fanart field at all; that only appears
+            // once opened (Detail, .background)
             $result['image'] = $result['image_url'] ?? null;
             unset($result['image_url']);
         }
@@ -110,13 +98,9 @@ class Client
     }
 
     /**
-     * /extended, not the base /series/{id} - needed for `genres` (confirmed
-     * empirically absent from the base record, same as a movie's own base
-     * record). Everything else Series::upsert() reads (name/slug/image/
-     * firstAired/lastAired/averageRuntime/status) is present in the exact
-     * same shape on both, confirmed empirically - unlike getMovie(), no
-     * extra background/overview request is needed here since a series'
-     * /extended response already includes both directly
+     * /extended, not the base /series/{id} - needed for `genres`, absent
+     * from the base record. Unlike getMovie(), no extra background/overview
+     * request is needed - /extended already includes both directly.
      */
     public function getSeries(int $tvdbId): array
     {
@@ -125,15 +109,11 @@ class Client
     }
 
     /**
-     * a movie's own GET /movies/{id}/extended already returns its full
-     * artworks list inline - confirmed empirically (57 artworks back for
-     * "Encanto", including type 15 backgrounds) - so no separate background
-     * request is needed, unlike getSeries()/getSeriesBackground(). It does
-     * NOT include a top-level 'overview' though (only 'overviewTranslations',
-     * a list of language codes) - confirmed empirically against the real API
-     * - unlike a series' base record, which has one. A second request fills
-     * it in from the movie's own original-language translation, the same
-     * text 'overview' would have held had TheTVDB included it directly.
+     * /extended already returns the full artworks list inline, so no
+     * separate background request is needed (unlike getSeries()/
+     * getSeriesBackground()). It does NOT include a top-level 'overview'
+     * though (only 'overviewTranslations') - a second request fills it in
+     * from the movie's original-language translation.
      */
     public function getMovie(int $tvdbId): array
     {
@@ -166,10 +146,9 @@ class Client
     }
 
     /**
-     * counterpart of getSeriesTranslation() - same shape ({name, overview,
-     * language}), same null-on-no-translation behavior, confirmed empirically
-     * against the real API (e.g. "Encanto" has a Spanish translation, no
-     * Catalan one - a 404, not an error)
+     * counterpart of getSeriesTranslation() - same shape, same
+     * null-on-no-translation behavior (a missing translation is a 404, not
+     * an error)
      */
     public function getMovieTranslation(int $tvdbId, string $tvdbLanguageCode): ?array
     {
@@ -178,13 +157,9 @@ class Client
     }
 
     /**
-     * follows every page - a single TVDB page tops out at 500 episodes,
-     * which a long-running weekly/daily show (confirmed for real: "APM?"
-     * 22 seasons, "30 minuts" 42 seasons) genuinely exceeds, silently
-     * truncating the higher seasons when only page 0 was ever fetched (the
-     * previous version of this method). Most shows still only need the one
-     * request - this only pages further when TheTVDB's own `links.next`
-     * says there's more.
+     * Follows every page - a single TVDB page tops out at 500 episodes,
+     * which a long-running daily/weekly show can exceed (silently
+     * truncating higher seasons if only page 0 is fetched).
      */
     public function getSeriesEpisodes(int $tvdbSeriesId, string $seasonType = 'official'): array
     {
@@ -192,12 +167,10 @@ class Client
     }
 
     /**
-     * unlike getSeriesTranslation() (one series-level record), this returns
-     * *every* episode of the series translated into $tvdbLanguageCode in a
-     * single page - confirmed empirically (149 episodes back for a 149-
-     * episode series, same as the untranslated getSeriesEpisodes() call),
-     * so no need to fetch translations per-episode. Still paginated the
-     * same way as getSeriesEpisodes() above for the same reason.
+     * Unlike getSeriesTranslation() (one series-level record), returns
+     * every episode translated into $tvdbLanguageCode in one call - no need
+     * to fetch translations per-episode. Paginated the same way as
+     * getSeriesEpisodes().
      */
     public function getSeriesEpisodesTranslated(int $tvdbSeriesId, string $tvdbLanguageCode, string $seasonType = 'official'): array
     {
@@ -222,11 +195,9 @@ class Client
     }
 
     /**
-     * $tvdbLanguageCode is TheTVDB's own 3-letter code (e.g. "cat"/"spa"/
-     * "eng"), not this app's 2-letter one - see Api\Model\TheTvdb\Languages
-     * for that mapping. Returns null (not an error/exception) when TheTVDB
-     * has no translation in that language - a normal, expected 404 for most
-     * shows in most languages, not a failure worth retrying or logging
+     * $tvdbLanguageCode is TheTVDB's 3-letter code, not this app's 2-letter
+     * one - see Languages for that mapping. Returns null (not an exception)
+     * on a missing translation - a normal, expected 404.
      */
     public function getSeriesTranslation(int $tvdbSeriesId, string $tvdbLanguageCode): ?array
     {
@@ -235,11 +206,9 @@ class Client
     }
 
     /**
-     * a series typically has dozens of background/fanart images (artwork
-     * type 3, confirmed via GET /artwork/types) - only the single
-     * highest-scored one is kept, not the full list. TheTVDB already
-     * returns them sorted by score descending, but that's re-checked here
-     * rather than assumed
+     * A series typically has dozens of background images (artwork type 3)
+     * - only the highest-scored one is kept; re-sorted here rather than
+     * assuming TheTVDB's own ordering.
      */
     public function getSeriesBackground(int $tvdbSeriesId): ?string
     {
@@ -262,11 +231,8 @@ class Client
 
         $response = $this->call($method, $url, $this->getToken());
 
-        // retry exactly once, forcing a fresh login - but ONLY on a real
-        // 401, not on every non-"success" envelope: a legitimate 404 (e.g.
-        // getSeriesTranslation() asking for a language TheTVDB doesn't have)
-        // is a normal outcome, not an auth failure, and retrying it would
-        // just waste a forced re-login for the same expected 404 again
+        // retry once with a forced fresh login, but only on a real 401 - a
+        // legitimate 404 (e.g. a missing translation) isn't an auth failure
         if ($response['httpStatus'] === 401) {
             $response = $this->call($method, $url, $this->login());
         }
@@ -282,16 +248,11 @@ class Client
 
     /**
      * Deliberately not Core\Model\Utils\Curl - its make() unconditionally
-     * routes every request through a CURLOPT_PROXY of
-     * $_SERVER['SERVER_ADDR'] . ':' . $_SERVER['SERVER_PORT'] whenever
-     * IS_DEV is true (i.e. this app's own web server address), which has
-     * nothing to do with reaching a genuine third-party host like TheTVDB -
-     * confirmed empirically (curl error 7, "couldn't connect", reproduced
-     * by manually setting --proxy to that same address) rather than
-     * assumed. Also skips Curl::get()'s unrelated GET+params bug (it puts
-     * $params into CURLOPT_POSTFIELDS even for a GET request, which makes
-     * libcurl silently send a POST instead) by never passing query params
-     * as a separate array - request() already bakes them into $url.
+     * proxies through this app's own dev server address when IS_DEV is
+     * true, breaking real third-party calls (curl error 7). Also sidesteps
+     * Curl::get()'s GET+params bug (params land in CURLOPT_POSTFIELDS,
+     * turning a GET into a silent POST) by baking query params into $url
+     * instead.
      *
      * @return array{httpStatus: int, body: array}
      */
@@ -323,10 +284,9 @@ class Client
 
     private function login(): string
     {
-        // Config::get() returns '' (not an array) when the key is entirely
-        // absent - i.e. config/api/{dev,prod}/thetvdb.php hasn't been copied
-        // from its .dist yet - so guard explicitly instead of a confusing
-        // "cannot access offset of type string on string" TypeError below
+        // Config::get() returns '' (not an array) when the config file
+        // hasn't been copied from its .dist yet - guard explicitly to avoid
+        // a confusing TypeError below
         $tvdbConfig = $this->config->get('thetvdb');
         if (!is_array($tvdbConfig) || empty($tvdbConfig['apikey'])) {
             throw new RuntimeException(

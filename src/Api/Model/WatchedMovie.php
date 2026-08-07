@@ -9,14 +9,10 @@ class WatchedMovie extends Model
 {
 
     /**
-     * idempotent - a no-op if $idMovie is already watched at all (one or
-     * more times), unlike markRewatched() below. Same shape as
-     * WatchedEpisode::markWatched(), collapsed to a single entity since a
-     * movie has no episodes of its own. Deliberately never tags the row
-     * with an import id, same reasoning as WatchedEpisode::markWatched()'s
-     * own docblock - keeps id_user_import IS NOT NULL meaning exactly
-     * "a syncRewatchFromImport()-inserted row" and nothing else, on both
-     * tables consistently
+     * Idempotent - no-op if already watched, unlike markRewatched() below. Never tags the
+     * row with an import id, same reasoning as WatchedEpisode::markWatched() - keeps
+     * id_user_import IS NOT NULL meaning exactly a syncRewatchFromImport() row, on both
+     * tables consistently.
      */
     public function markWatched(int $idUser, int $idMovie, ?string $watchedAt = null): void
     {
@@ -26,27 +22,17 @@ class WatchedMovie extends Model
         $this->insertWatch($idUser, $idMovie, $watchedAt);
     }
 
-    /**
-     * always inserts a new watch event, even if $idMovie is already watched
-     * - user_movie_watched is one row per watch event, not per movie, so a
-     * rewatch just adds another one rather than being silently absorbed
-     * like markWatched() would. Used directly by the app's own rewatch
-     * controller; the importer uses syncRewatchFromImport() below instead
-     */
+    /** Always inserts a new watch event, even if already watched - one row per watch event, not per movie. The importer uses syncRewatchFromImport() below instead */
     public function markRewatched(int $idUser, int $idMovie, ?string $watchedAt = null): void
     {
         $this->insertWatch($idUser, $idMovie, $watchedAt);
     }
 
     /**
-     * Unlike an episode rewatch (a bare count against one shared
-     * timestamp - see WatchedEpisode::syncRewatchesFromImport()'s own
-     * docblock), each movie rewatch in a TV Time export carries its own
-     * genuine, distinct timestamp (Api\Model\TvTimeImport\Parser's own
-     * docblock). That timestamp is itself a natural dedup key: if an
-     * earlier import already recorded a rewatch at this exact moment
-     * (tagged via $idTvtimeImport), a later import job re-processing the
-     * same export data is a no-op instead of inserting a duplicate.
+     * Unlike an episode rewatch (a bare count, see WatchedEpisode::syncRewatchesFromImport()),
+     * each movie rewatch has its own distinct timestamp, which is itself a natural dedup
+     * key: if an earlier import already recorded one at this exact moment, re-processing
+     * the same export is a no-op instead of inserting a duplicate.
      *
      * @return bool true if a new row was actually inserted
      */
@@ -76,11 +62,7 @@ class WatchedMovie extends Model
         return count($this->mysql->query($sql, $params)) > 0;
     }
 
-    /**
-     * the inverse of markRewatched() - collapses every watch event for
-     * $idMovie back down to just the earliest one, undoing any rewatches
-     * without fully unwatching it like markUnwatched() does
-     */
+    /** Inverse of markRewatched() - collapses every watch event back to the earliest one, without fully unwatching like markUnwatched() does */
     public function resetToSingleWatch(int $idUser, int $idMovie): void
     {
         $sql    = '
@@ -113,10 +95,7 @@ class WatchedMovie extends Model
         $this->mysql->query($sql2, $params2);
     }
 
-    /**
-     * a full reset - every watch event for $idMovie is removed, not just
-     * the most recent rewatch
-     */
+    /** Full reset - every watch event is removed, not just the most recent rewatch */
     public function markUnwatched(int $idUser, int $idMovie): void
     {
         $sql    = '
@@ -142,11 +121,7 @@ class WatchedMovie extends Model
         $this->mysql->query($sql, $params);
     }
 
-    /**
-     * how many times $idMovie has been watched by $idUser - 0 means never
-     * watched, unlike WatchedEpisode::watchCounts() this is a single count
-     * for a single entity, not a per-episode map
-     */
+    /** How many times $idMovie has been watched - unlike WatchedEpisode::watchCounts() this is a single count, not a per-episode map */
     public function watchCount(int $idUser, int $idMovie): int
     {
         $sql    = '

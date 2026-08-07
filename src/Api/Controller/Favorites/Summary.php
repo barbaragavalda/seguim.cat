@@ -7,12 +7,6 @@ use Api\Model\MovieFavorite;
 use Api\Model\SerieFavorite;
 use Core\Routing\Attribute\Route;
 
-/**
- * Count + small poster preview for both favorite kinds in one call - backs
- * the two fixed rows ("Sèries favorites"/"Pel·lícules favorites") pinned
- * above ProfileScreen's own list-preview rows, same visual shape as
- * Api\Controller\Lists\Index's own per-list preview.
- */
 #[Route('/favorites/summary', methods: ['GET'], name: 'api.favorites.summary')]
 class Summary extends Controller
 {

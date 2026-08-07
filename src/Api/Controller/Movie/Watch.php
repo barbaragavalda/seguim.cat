@@ -18,16 +18,13 @@ class Watch extends Controller
 
         $movie = new MovieModel();
         if (!$movie->loadWithTvdbId($tvdbId)) {
-            // movie isn't locally known yet - the movie detail endpoint is
-            // what mirrors it first, same as Episode\Watch for series
+            // movie isn't locally known yet - movie detail endpoint mirrors it first, same as Episode\Watch
             $this->error = '404';
             return;
         }
 
-        // marking a movie watched implies the user is tracking it, even if
-        // they never explicitly hit "+ Watchlist" first - add() is an
-        // INSERT IGNORE, so this is a no-op when it's already there, same
-        // reasoning as Episode\Watch
+        // marking watched implies tracking it too - add() is INSERT IGNORE so this is a
+        // no-op if already there, same reasoning as Episode\Watch
         (new MovieWatchlist())->add($this->user->getID(), $movie->getInfo()['id_movie']);
 
         (new WatchedMovie())->markWatched($this->user->getID(), $movie->getInfo()['id_movie']);

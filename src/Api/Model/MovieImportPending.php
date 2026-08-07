@@ -7,17 +7,12 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * A movie title Api\Model\TvTimeImport\MovieMatcher couldn't confidently
- * resolve, waiting for the user to pick the right one by hand (or dismiss
- * it) - see MovieMatcher's own docblock for why this exists instead of
- * guessing or silently dropping the title.
+ * A movie title MovieMatcher couldn't confidently resolve, waiting for the
+ * user to pick by hand (or dismiss) - see MovieMatcher's own docblock.
  *
- * resolve()/skip() mark a row `resolved` instead of deleting it: the title
- * itself is exactly as ambiguous on a later import as it was on this one
- * (nothing about the source data changes), so Processor checks isResolved()
- * before even attempting the match again - without the row surviving,
- * every re-import would re-discover the same ambiguity and put the same
- * already-answered question back in front of the user.
+ * resolve()/skip() mark rows resolved instead of deleting: the title is
+ * exactly as ambiguous on a later import, so isResolved() prevents
+ * re-surfacing an already-answered question.
  */
 class MovieImportPending extends Model
 {
@@ -97,11 +92,9 @@ class MovieImportPending extends Model
     }
 
     /**
-     * how many of $idUserList's own movies are still waiting on a pending
-     * row - for the app's own "X of Y imported" list indicator. Excludes
-     * already-resolved/dismissed rows (see `resolved`'s own docblock in
-     * db.sql) - those aren't "still" pending for the list, resolve() itself
-     * already added them (or skip() confirmed they never will be)
+     * count of $idUserList's still-pending movies, for the app's "X of Y
+     * imported" indicator - resolved/dismissed rows excluded (see
+     * `resolved` in db.sql)
      */
     public function pendingCountForList(int $idUserList): int
     {
@@ -116,14 +109,8 @@ class MovieImportPending extends Model
     }
 
     /**
-     * whether $movieName already has a resolved/dismissed row for $idUser -
-     * checked by Processor before matching this exact title again, so a
-     * later import doesn't resurrect a resolution dialog the user already
-     * answered (the source title is still just as ambiguous as before -
-     * that never changes - so without this check the same createOrUpdate()
-     * call that used to update the row in place before it was resolved
-     * would instead create a brand new one, since resolve()/skip() no
-     * longer delete it)
+     * whether $movieName already has a resolved/dismissed row - checked
+     * before re-matching so an already-answered question doesn't resurface
      */
     public function isResolved(int $idUser, string $movieName): bool
     {
@@ -199,31 +186,17 @@ class MovieImportPending extends Model
     }
 
     /**
-     * Applies the user's chosen TheTVDB movie(s) for a pending title - syncs
-     * each (same lazy-mirror sync() every other movie endpoint uses), then
-     * replays the watchlist/watched/rewatch state that was snapshotted at
-     * import time, exactly as Processor::processMovies() would have done
-     * for a confident match. Removes the pending row once applied.
+     * Applies the user's chosen TheTVDB movie(s), replaying the snapshotted
+     * watchlist/watched/rewatch state, then removes the pending row.
      *
      * $watchedTvdbIds/$pendingTvdbIds can together have more than one entry
-     * - TV Time's own export sometimes has no way to tell two real movies
-     * apart under one title (e.g. "Mulan" 1998 vs 2020), and when it also
-     * has no release date for either uuid (confirmed empirically: about
-     * half of one real user's tracked movies), TvTimeImport\Parser can't
-     * even tell whether that's the same film re-followed or two different
-     * ones - so this screen lets the user split the snapshot's own
-     * watched_at across candidates by hand instead of guessing: a candidate
-     * in $watchedTvdbIds gets it applied (this pending entry might not even
-     * have one, e.g. a plain "to watch" that was never watched), one in
-     * $pendingTvdbIds is added to the watchlist only, left unwatched -
-     * because the user knows they watched one version but not the other,
-     * which the source data alone can't say.
+     * - TV Time sometimes can't tell two real movies apart under one title
+     * (e.g. "Mulan" 1998 vs 2020) with no release date to disambiguate, so
+     * the user splits watched/unwatched across candidates by hand here.
      *
      * @return ?bool null if no such pending row belongs to this user, false
-     *               if the row exists but none of the chosen ids resolve on
-     *               TheTVDB right now (e.g. a candidate TheTVDB has since
-     *               merged/deleted - confirmed to happen in practice: two
-     *               candidates sharing a name/year, one already dead)
+     *               if none of the chosen ids resolve on TheTVDB right now
+     *               (e.g. a candidate has since been merged/deleted)
      */
     public function resolve(int $id, int $idUser, array $watchedTvdbIds, array $pendingTvdbIds, Client $client): ?bool
     {
@@ -266,13 +239,10 @@ class MovieImportPending extends Model
     }
 
     /**
-     * syncs one chosen candidate and adds it to the watchlist (+ whichever
-     * lists this pending title was also wanted in) - the part every
-     * candidate needs regardless of whether it ends up marked watched, see
-     * resolve()'s own docblock
+     * Syncs one candidate and adds it to the watchlist + linked lists -
+     * shared by both watched and pending-only candidates in resolve().
      *
-     * @return ?array the synced movie's own info row, null if it doesn't
-     *                resolve on TheTVDB right now
+     * @return ?array the synced movie's info row, null if it doesn't resolve
      */
     private function applyCandidate(int $idUser, int $tvdbId, array $pending, array $linkedLists, UserListMovie $userListMovie, Client $client): ?array
     {
@@ -285,10 +255,8 @@ class MovieImportPending extends Model
 
         (new MovieWatchlist())->addFromImport($idUser, $info['id_movie'], $pending['watchlist_created_at']);
 
-        // this movie was also wanted as a member of one or more lists
-        // (Processor::processLists() linked it here instead of silently
-        // dropping it - see user_movie_list_pending's own docblock) -
-        // now that it's actually synced, add it to each of them too
+        // also wanted in other lists (see user_movie_list_pending's own
+        // docblock) - add now that it's synced
         foreach ($linkedLists as $linked) {
             $userListMovie->add($linked['id_user_list'], (int) $info['id_movie'], $linked['added_at']);
         }
@@ -297,8 +265,7 @@ class MovieImportPending extends Model
     }
 
     /**
-     * Dismisses a pending title without applying anything - the user
-     * confirmed none of the candidates (or the lack of any) are right.
+     * Dismisses a pending title without applying anything.
      *
      * @return bool false if no such pending row belongs to this user
      */
@@ -313,10 +280,8 @@ class MovieImportPending extends Model
     }
 
     /**
-     * Marks a pending row as handled (resolved with a candidate, or
-     * dismissed - both count as "the user already answered this" as far as
-     * a future import is concerned) instead of deleting it - see
-     * `resolved`'s own docblock in db.sql on why the row has to survive.
+     * marks a row handled instead of deleting it - see `resolved` in
+     * db.sql for why it must survive
      */
     private function markResolved(int $id): void
     {

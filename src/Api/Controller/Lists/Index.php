@@ -12,10 +12,8 @@ use Core\Routing\Attribute\Route;
 class Index extends Controller
 {
 
-    // how many poster thumbnails ListsScreen's own row preview shows per
-    // list - series first (own manual order), topped up with movies if the
-    // list doesn't have that many series - see UserListMovie::
-    // previewForList()'s own docblock on why they're not merged by date
+    // series first (own order), topped up with movies - see
+    // UserListMovie::previewForList() for why they're not merged by date
     private const int PREVIEW_LIMIT = 5;
 
     protected function run(): void

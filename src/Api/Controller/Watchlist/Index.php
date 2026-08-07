@@ -8,9 +8,8 @@ use Api\Model\Watchlist;
 use Core\Routing\Attribute\Route;
 
 /**
- * Unified, filterable "browse everything" view - a profile-style screen
- * for reviewing series by status, separate from the app's two opinionated
- * home-screen lists (Watching, NotStarted), which stay as they are.
+ * Filterable "browse everything" view, separate from the app's two
+ * opinionated home-screen lists (Watching, NotStarted).
  */
 #[Route('/watchlist', methods: ['GET'], name: 'api.watchlist.index')]
 class Index extends Controller

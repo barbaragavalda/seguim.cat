@@ -24,9 +24,8 @@ class Add extends Controller
     {
         $tvdbId = (int) $this->getParam('tvdbId');
 
-        // sync() first so user_movie_watchlist always points at a real
-        // local movie row, even if this is the first time anyone's touched
-        // it - same reasoning as Watchlist\Add for series
+        // sync() first so user_movie_watchlist always points at a real row, even on first
+        // touch - same reasoning as Watchlist\Add for series
         $movie = new Movie();
         $info  = $movie->sync($tvdbId, $this->client);
         if (empty($info)) {
@@ -34,9 +33,8 @@ class Add extends Controller
             return;
         }
 
-        // so the watchlist has a name/overview ready in the user's own
-        // language immediately, instead of only after they first open this
-        // movie's own detail endpoint
+        // so the watchlist has a name/overview ready immediately, not only after the movie's
+        // own detail endpoint is first opened
         (new MovieLang())->syncForLanguage($info['id_movie'], $tvdbId, $this->config->getLanguage(), $this->client);
 
         (new MovieWatchlist())->add($this->user->getID(), $info['id_movie']);

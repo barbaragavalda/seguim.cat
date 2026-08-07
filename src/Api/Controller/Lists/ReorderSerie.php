@@ -8,11 +8,7 @@ use Api\Model\UserList;
 use Api\Model\UserListSerie;
 use Core\Routing\Attribute\Route;
 
-/**
- * Moves this series to right after `after` (a tvdbId) within the list, or
- * to the very front if `after` is omitted/empty - same "relative to a
- * visible neighbor" reasoning as Lists\Reorder
- */
+/** `after` omitted/empty moves to the front - same relative-to-neighbor reasoning as Lists\Reorder */
 #[Route('/lists/{id}/series/{tvdbId}/reorder', methods: ['POST'], name: 'api.lists.reorder_serie', requirements: ['id' => '\d+', 'tvdbId' => '\d+'])]
 class ReorderSerie extends Controller
 {

@@ -7,16 +7,13 @@ use Core\Model\Model;
 use PDO;
 
 /**
- * A show whose TV Time tv_show_id no longer resolves on TheTVDB at all -
- * Api\Model\TvTimeImport\SeriesMatcher's own name search couldn't confidently
- * resolve a replacement (several same-titled candidates, or none) - waiting
- * for the user to pick the right one by hand (or dismiss it). Mirrors
- * MovieImportPending, except the watched/rewatch snapshot is keyed by
- * season+episode NUMBER rather than TheTVDB episode id - see this table's
- * own docblock in db.sql for why.
+ * A show TvTimeImport\SeriesMatcher couldn't confidently resolve, waiting
+ * for the user to pick by hand (or dismiss). Mirrors MovieImportPending,
+ * except watched/rewatch state is keyed by season+episode NUMBER rather
+ * than TheTVDB episode id - see this table's own docblock in db.sql for why.
  *
- * resolve()/skip() mark a row `resolved` instead of deleting it - see
- * MovieImportPending's own docblock on why, identical reasoning here.
+ * resolve()/skip() mark rows resolved instead of deleting - see
+ * MovieImportPending's own docblock for why.
  */
 class SeriesImportPending extends Model
 {
@@ -65,12 +62,10 @@ class SeriesImportPending extends Model
     }
 
     /**
-     * Records that $idUserList wants this pending show as a member, once
-     * resolved - see user_serie_list_pending's own docblock in db.sql.
-     * Idempotent (a re-import or a resumed batch hitting the same list/show
-     * pair again is a no-op) via INSERT IGNORE rather than a SELECT-then-
-     * INSERT, since the table's own unique key already guarantees this
-     * safely under concurrent/repeated calls.
+     * Records that $idUserList wants this pending show, once resolved - see
+     * user_serie_list_pending's own docblock. INSERT IGNORE (not
+     * SELECT-then-INSERT) relies on the table's unique key to stay
+     * idempotent under repeated/concurrent calls.
      */
     public function linkList(int $idSeriesImportPending, int $idUserList, ?string $addedAt): void
     {
@@ -106,10 +101,8 @@ class SeriesImportPending extends Model
     }
 
     /**
-     * how many of $idUserList's own series are still waiting on a pending
-     * row - for the app's own "X of Y imported" list indicator. Excludes
-     * already-resolved/dismissed rows - see MovieImportPending::
-     * pendingCountForList()'s own docblock, identical reasoning
+     * count of $idUserList's still-pending series, for the "X of Y
+     * imported" indicator - see MovieImportPending::pendingCountForList()
      */
     public function pendingCountForList(int $idUserList): int
     {
@@ -123,11 +116,7 @@ class SeriesImportPending extends Model
         return (int) ($this->mysql->query($sql, $params)[0]['cnt'] ?? 0);
     }
 
-    /**
-     * whether $showName already has a resolved/dismissed row for $idUser -
-     * see MovieImportPending::isResolved()'s own docblock, identical
-     * reasoning
-     */
+    /** see MovieImportPending::isResolved()'s own docblock - identical reasoning */
     public function isResolved(int $idUser, string $showName): bool
     {
         $sql    = '
@@ -166,10 +155,9 @@ class SeriesImportPending extends Model
     }
 
     /**
-     * looks up a pending row's own id by its unique key instead of by its
-     * primary key - createOrUpdate() is an upsert and doesn't return which
-     * row it touched, and Processor::processLists() needs this id right
-     * after to link a list to it (see linkList())
+     * Looks up by unique key rather than primary key - createOrUpdate() is
+     * an upsert that doesn't return which row it touched, but
+     * processLists() needs the id right after to link a list (see linkList())
      */
     public function idForShowName(int $idUser, string $showName): ?int
     {
@@ -204,23 +192,17 @@ class SeriesImportPending extends Model
     }
 
     /**
-     * Applies the user's chosen TheTVDB series for a pending show - syncs
-     * it/them and their episodes, then replays the watchlist/watched/
-     * rewatch state snapshotted at import time by matching each stored
-     * {season, episode} pair against the newly-synced episode list (the old
-     * export's own episode ids are exactly as dead as the show id was - see
-     * this class' own docblock).
+     * Applies the chosen TheTVDB series - syncs it/them and their episodes,
+     * then replays the snapshotted watchlist/watched/rewatch state by
+     * matching each stored {season, episode} pair against the newly-synced
+     * episodes.
      *
      * $tvdbIds can have more than one entry, same reasoning as
-     * MovieImportPending::resolve() (e.g. a same-titled reboot watched under
-     * one ambiguous TV Time entry) - applied independently to each.
+     * MovieImportPending::resolve() (e.g. a same-titled reboot).
      *
      * @param array<int> $tvdbIds
      * @return ?bool null if no such pending row belongs to this user, false
-     *               if the row exists but none of the chosen ids resolve on
-     *               TheTVDB right now (e.g. a candidate TheTVDB has since
-     *               merged/deleted - confirmed to happen in practice: two
-     *               candidates sharing a name/year, one already dead)
+     *               if none of the chosen ids resolve on TheTVDB right now
      */
     public function resolve(int $id, int $idUser, array $tvdbIds, Client $client): ?bool
     {
@@ -277,16 +259,14 @@ class SeriesImportPending extends Model
                 }
             }
 
-            // this show was also wanted as a member of one or more lists
-            // (Processor::processLists() linked it here instead of silently
-            // dropping it - see user_serie_list_pending's own docblock) -
-            // now that it's actually synced, add it to each of them too
+            // also wanted in other lists (see user_serie_list_pending's own
+            // docblock) - add now that it's synced
             foreach ($linkedLists as $linked) {
                 $userListSerie->add($linked['id_user_list'], (int) $info['id_serie'], $linked['added_at']);
             }
 
-            // same "user's own watch history decides finished, not
-            // TheTVDB's status" reasoning as Processor's own two call sites
+            // user's own watch history decides finished, not TheTVDB's
+            // status - same reasoning as Processor's two call sites
             if ($watchlist->hasWatchedLastEpisode($idUser, $info['id_serie'])) {
                 $watchlist->setArchived($idUser, $info['id_serie'], false);
                 $watchlist->setRemoved($idUser, $info['id_serie'], false);
@@ -318,10 +298,7 @@ class SeriesImportPending extends Model
         return true;
     }
 
-    /**
-     * see MovieImportPending::markResolved()'s own docblock, identical
-     * reasoning
-     */
+    /** see MovieImportPending::markResolved()'s own docblock - identical reasoning */
     private function markResolved(int $id): void
     {
         $sql    = '
