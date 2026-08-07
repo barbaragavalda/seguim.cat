@@ -10,6 +10,12 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+msgid "privacitat"
+msgstr "privacidad"
+
+msgid "Si t'hi apuntes amb Google, només fem servir el teu compte per identificar-te — mai accedim a res més."
+msgstr "Si te apuntas con Google, solo usamos tu cuenta para identificarte — nunca accedemos a nada más."
+
 msgid "Accedeix a l'app"
 msgstr "Accede a la app"
 

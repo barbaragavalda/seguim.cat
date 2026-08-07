@@ -19,9 +19,15 @@ class Content
     public static function home(): array
     {
         return array(
-            'ctaLabel'  => _("Accedeix a l'app"),
-            'heroTitle' => _('No perdis mai el fil del que mires'),
-            'heroBody'  => _("Seguim! t'ajuda a fer un seguiment de les sèries i pel·lícules que mires: marca capítols vistos, desa els teus favorits i no perdis mai el fil de què t'has de veure."),
+            'ctaLabel'   => _("Accedeix a l'app"),
+            'heroTitle'  => _('No perdis mai el fil del que mires'),
+            'heroBody'   => _("Seguim! t'ajuda a fer un seguiment de les sèries i pel·lícules que mires: marca capítols vistos, desa els teus favorits i no perdis mai el fil de què t'has de veure."),
+            // required content, not just nice-to-have - Google's OAuth
+            // verification specifically checks that the app's homepage
+            // explains *both* what the app does *and* how it uses the
+            // Google user data it requests (Sign in with Google), not just
+            // the first one
+            'googleNote' => _("Si t'hi apuntes amb Google, només fem servir el teu compte per identificar-te — mai accedim a res més."),
             'features'  => array(
                 array('icon' => 'check', 'title' => _('Marca capítols vistos'), 'body' => _('Un toc i ja saps per on vas.')),
                 array('icon' => 'favorite', 'title' => _('Desa favorits'), 'body' => _('Les teves sèries i pel·lícules preferides, sempre a mà.')),

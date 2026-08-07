@@ -6,12 +6,14 @@ use Core\Routing\Attribute\Route;
 use Web\Model\Content;
 
 /**
- * Deliberately the same literal path segment ('/privacitat') under every
- * language prefix (/ca/privacitat, /es/privacitat, /en/privacitat) rather
- * than a per-language translated slug - AttributeRouteLoader::translatePath()
- * would need a gettext msgid for the segment itself, and this URL doesn't
- * need to be pretty, just stable (it's what's pasted into Google Auth
- * Platform's Privacy Policy field, App Store Connect, etc).
+ * The '/privacitat' literal here is the canonical/source (Catalan) slug -
+ * AttributeRouteLoader::translatePath() runs it through gettext while
+ * building the route, so it resolves per-language via the same
+ * locale/{es_ES,en_GB}/LC_MESSAGES/messenges.po catalog as the rest of this
+ * app's copy (msgid "privacitat" -> "privacidad"/"privacy"). Always
+ * generate links to this route with Twig's url('web.privacy') rather than
+ * hardcoding the segment, so it always resolves to the current language's
+ * own translated slug.
  */
 #[Route('/privacitat', name: 'web.privacy')]
 class Privacy extends Controller

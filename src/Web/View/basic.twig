@@ -17,7 +17,7 @@
 
 <div class="wrap">
     <header>
-        <a class="brand" href="{{ domain }}">
+        <a class="brand" href="{{ url('web.home') }}">
             <img src="{{ staticDomain }}img/app-icon.png" alt="Seguim!">
             <span>Seguim!</span>
         </a>
@@ -35,7 +35,7 @@
     <footer>
         <span>&copy; {{ "now"|date("Y") }} Seguim!</span>
         <div class="links">
-            <a href="{{ domain }}privacitat">{{ footer.privacyLink }}</a>
+            <a href="{{ url('web.privacy') }}">{{ footer.privacyLink }}</a>
             <a class="tvdb" href="https://thetvdb.com" target="_blank" rel="noopener">
                 <img class="light" src="{{ staticDomain }}img/thetvdb_logo.png" alt="TheTVDB">
                 <img class="dark" src="{{ staticDomain }}img/thetvdb_logo_dark.png" alt="TheTVDB">
