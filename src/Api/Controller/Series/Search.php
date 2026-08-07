@@ -13,6 +13,8 @@ use Core\Utils\Config;
 class Search extends Controller
 {
 
+    private const int CACHE_TTL_SECONDS = 600;
+
     public function __construct(Config $config, CacheManager $modelCache, private readonly Client $client)
     {
         parent::__construct($config, $modelCache);
@@ -36,7 +38,11 @@ class Search extends Controller
         // unsupported culture, rather than leaving name/overview unset
         $tvdbLanguageCode = Languages::tvdbCodeForCulture($this->config->getLanguage()) ?? 'eng';
 
-        $result = $this->client->search($query, $page, $tvdbLanguageCode);
+        $result = $this->cached(
+            'series-search:' . $tvdbLanguageCode . ':' . $page . ':' . $query,
+            self::CACHE_TTL_SECONDS,
+            fn(): array => $this->client->search($query, $page, $tvdbLanguageCode),
+        );
         $this->assign('results', $result['results']);
         $this->assign('hasMore', $result['hasMore']);
     }

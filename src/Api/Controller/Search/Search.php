@@ -21,6 +21,8 @@ use Core\Utils\Config;
 class Search extends Controller
 {
 
+    private const int CACHE_TTL_SECONDS = 600;
+
     public function __construct(Config $config, CacheManager $modelCache, private readonly Client $client)
     {
         parent::__construct($config, $modelCache);
@@ -42,7 +44,12 @@ class Search extends Controller
 
         $tvdbLanguageCode = Languages::tvdbCodeForCulture($this->config->getLanguage()) ?? 'eng';
 
-        $result = $this->client->searchAll($query, $page, $tvdbLanguageCode);
+        // cached unpersonalized - watch progress is enriched below, after the cache
+        $result = $this->cached(
+            'unified-search:' . $tvdbLanguageCode . ':' . $page . ':' . $query,
+            self::CACHE_TTL_SECONDS,
+            fn(): array => $this->client->searchAll($query, $page, $tvdbLanguageCode),
+        );
         $results = $result['results'];
 
         // only true when a real user token was sent (requiresUserToken() is false so the
