@@ -1,0 +1,16 @@
+{% extends 'basic.twig' %}
+
+{% block title %}{{ footer.privacyLink }} — Seguim!{% endblock %}
+
+{% block content %}
+    <article class="legal">
+        <h1>{{ footer.privacyLink }}</h1>
+        <p class="updated">{{ privacy.updated }}</p>
+        <p class="intro">{{ privacy.intro|raw }}</p>
+
+        {% for section in privacy.sections %}
+            <h2>{{ section.title }}</h2>
+            {{ section.body|raw }}
+        {% endfor %}
+    </article>
+{% endblock %}

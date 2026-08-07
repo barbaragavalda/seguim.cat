@@ -1,5 +1,32 @@
 {% extends 'basic.twig' %}
 
+{% block meta %}
+    <meta name="description" content="{{ home.heroBody }}">
+{% endblock %}
+
 {% block content %}
-    <h1>{{ webName }}</h1>
+    <section class="hero">
+        <h1>{{ home.heroTitle }}</h1>
+        <p>{{ home.heroBody }}</p>
+        <div class="actions">
+            <a class="btn btn-primary" href="https://seguim.cuinadeprofit.cat">{{ home.ctaLabel }}</a>
+        </div>
+        <div class="posters" aria-hidden="true">
+            {% for poster in posters %}
+                <img src="{{ poster }}" alt="" loading="lazy">
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="features">
+        <div class="features-grid">
+            {% for feature in home.features %}
+                <div class="feature">
+                    <span class="material-symbols-outlined" aria-hidden="true">{{ feature.icon }}</span>
+                    <p class="title">{{ feature.title }}</p>
+                    <p class="body">{{ feature.body }}</p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
 {% endblock %}

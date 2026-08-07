@@ -3,11 +3,47 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <title>{{ webName }}</title>
+    <title>{% block title %}Seguim!{% endblock %}</title>
+    {% block meta %}{% endblock %}
+    <link rel="icon" type="image/png" href="{{ staticDomain }}img/app-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;900&family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+    <link rel="stylesheet" href="{{ staticDomain }}css/web{{ min }}.css">
+    {% block styles %}{% endblock %}
 </head>
 <body>
 
-{% block content %}{% endblock %}
+<div class="wrap">
+    <header>
+        <a class="brand" href="{{ domain }}">
+            <img src="{{ staticDomain }}img/app-icon.png" alt="Seguim!">
+            <span>Seguim!</span>
+        </a>
+        <nav>
+            <div class="lang-switch">
+                <a href="{{ rootDomain }}ca/" class="{{ lang == 'ca' ? 'active' : '' }}">CA</a>
+                <a href="{{ rootDomain }}es/" class="{{ lang == 'es' ? 'active' : '' }}">ES</a>
+                <a href="{{ rootDomain }}en/" class="{{ lang == 'en' ? 'active' : '' }}">EN</a>
+            </div>
+        </nav>
+    </header>
+
+    {% block content %}{% endblock %}
+
+    <footer>
+        <span>&copy; {{ "now"|date("Y") }} Seguim!</span>
+        <div class="links">
+            <a href="{{ domain }}privacitat">{{ footer.privacyLink }}</a>
+            <a class="tvdb" href="https://thetvdb.com" target="_blank" rel="noopener">
+                <img class="light" src="{{ staticDomain }}img/thetvdb_logo.png" alt="TheTVDB">
+                <img class="dark" src="{{ staticDomain }}img/thetvdb_logo_dark.png" alt="TheTVDB">
+                <span>{{ footer.tvdbAttribution }}</span>
+            </a>
+        </div>
+    </footer>
+</div>
 
 </body>
 </html>

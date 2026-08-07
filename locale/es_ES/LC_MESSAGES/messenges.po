@@ -5,113 +5,113 @@ msgstr ""
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
-"Language: en_GB\n"
+"Language: es_ES\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
 msgid "Accedeix a l'app"
-msgstr "Open the app"
+msgstr "Accede a la app"
 
 msgid "No perdis mai el fil del que mires"
-msgstr "Never lose track of what you're watching"
+msgstr "No pierdas nunca el hilo de lo que ves"
 
 msgid "Seguim! t'ajuda a fer un seguiment de les sèries i pel·lícules que mires: marca capítols vistos, desa els teus favorits i no perdis mai el fil de què t'has de veure."
-msgstr "Seguim! helps you track the series and movies you watch: mark episodes as seen, save your favorites, and never lose track of what to watch next."
+msgstr "Seguim! te ayuda a hacer un seguimiento de las series y películas que ves: marca episodios vistos, guarda tus favoritos y no pierdas nunca el hilo de qué tienes que ver."
 
 msgid "Marca capítols vistos"
-msgstr "Mark episodes watched"
+msgstr "Marca episodios vistos"
 
 msgid "Un toc i ja saps per on vas."
-msgstr "One tap and you know where you left off."
+msgstr "Un toque y ya sabes por dónde vas."
 
 msgid "Desa favorits"
-msgstr "Save favorites"
+msgstr "Guarda favoritos"
 
 msgid "Les teves sèries i pel·lícules preferides, sempre a mà."
-msgstr "Your favorite series and movies, always at hand."
+msgstr "Tus series y películas preferidas, siempre a mano."
 
 msgid "Crea llistes"
-msgstr "Create lists"
+msgstr "Crea listas"
 
 msgid "Organitza el que vols veure com tu vulguis."
-msgstr "Organize what to watch however you like."
+msgstr "Organiza lo que quieres ver como tú quieras."
 
 msgid "Importa de TV Time"
-msgstr "Import from TV Time"
+msgstr "Importa desde TV Time"
 
 msgid "Recupera tot el teu historial en un moment."
-msgstr "Get your whole history back in a moment."
+msgstr "Recupera todo tu historial en un momento."
 
 msgid "Política de privacitat"
-msgstr "Privacy Policy"
+msgstr "Política de privacidad"
 
 msgid "Metadades proporcionades per TheTVDB."
-msgstr "Metadata provided by TheTVDB."
+msgstr "Metadatos proporcionados por TheTVDB."
 
 msgid "Última actualització: 6 d'agost de 2026"
-msgstr "Last updated: August 6, 2026"
+msgstr "Última actualización: 6 de agosto de 2026"
 
 msgid "Aquesta política explica quines dades recull l'aplicació <strong>Seguim!</strong>, per a què les fem servir i quins drets tens sobre elles."
-msgstr "This policy explains what data the <strong>Seguim!</strong> app collects, what we use it for, and what rights you have over it."
+msgstr "Esta política explica qué datos recoge la aplicación <strong>Seguim!</strong>, para qué los usamos y qué derechos tienes sobre ellos."
 
 msgid "Responsable del tractament"
-msgstr "Data controller"
+msgstr "Responsable del tratamiento"
 
 msgid "Bàrbara Gavaldà<br>Correu de contacte: <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>"
-msgstr "Bàrbara Gavaldà<br>Contact email: <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>"
+msgstr "Bàrbara Gavaldà<br>Correo de contacto: <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>"
 
 msgid "Quines dades recollim"
-msgstr "What data we collect"
+msgstr "Qué datos recogemos"
 
 msgid "<ul><li><strong>Dades de compte:</strong> nom d'usuari, adreça electrònica (emmagatzemada xifrada) i contrasenya (emmagatzemada com a hash, mai en text pla).</li><li><strong>Si inicies sessió amb Google:</strong> el teu identificador de compte de Google i l'adreça electrònica associada, únicament per autenticar-te.</li><li><strong>Idioma preferit</strong> de l'aplicació.</li><li><strong>Activitat dins l'app:</strong> les sèries i pel·lícules que segueixes, els capítols que has marcat com a vistos, els teus favorits i les llistes personalitzades que crees.</li><li><strong>Si importes dades de TV Time:</strong> processem el fitxer que puges únicament per traspassar aquest historial al teu compte.</li></ul>"
-msgstr "<ul><li><strong>Account data:</strong> username, email address (stored encrypted), and password (stored as a hash, never in plain text).</li><li><strong>If you sign in with Google:</strong> your Google account identifier and the associated email address, used only to authenticate you.</li><li><strong>Your preferred language</strong> in the app.</li><li><strong>In-app activity:</strong> the series and movies you follow, the episodes you've marked as watched, your favorites, and any custom lists you create.</li><li><strong>If you import data from TV Time:</strong> we process the file you upload solely to transfer that watch history into your account.</li></ul>"
+msgstr "<ul><li><strong>Datos de cuenta:</strong> nombre de usuario, dirección de correo electrónico (almacenada cifrada) y contraseña (almacenada como hash, nunca en texto plano).</li><li><strong>Si inicias sesión con Google:</strong> tu identificador de cuenta de Google y el correo electrónico asociado, únicamente para autenticarte.</li><li><strong>Idioma preferido</strong> de la aplicación.</li><li><strong>Actividad dentro de la app:</strong> las series y películas que sigues, los episodios marcados como vistos, tus favoritos y las listas personalizadas que creas.</li><li><strong>Si importas datos de TV Time:</strong> procesamos el archivo que subes únicamente para trasladar ese historial a tu cuenta.</li></ul>"
 
 msgid "Per què les recollim"
-msgstr "Why we collect it"
+msgstr "Para qué los recogemos"
 
 msgid "Únicament per oferir-te el servei: mantenir el teu compte, recordar què has vist i ajudar-te a seguir sèries i pel·lícules. No fem servir les teves dades amb finalitats publicitàries."
-msgstr "Only to provide the service: keeping your account, remembering what you've watched, and helping you track series and movies. We never use your data for advertising purposes."
+msgstr "Únicamente para ofrecerte el servicio: mantener tu cuenta, recordar qué has visto y ayudarte a seguir series y películas. No usamos tus datos con fines publicitarios."
 
 msgid "Amb qui les compartim"
-msgstr "Who we share it with"
+msgstr "Con quién los compartimos"
 
 msgid "<ul><li><strong>Google:</strong> només si tries iniciar sessió amb Google, per verificar la teva identitat.</li><li><strong>TheTVDB:</strong> fem servir aquest servei per obtenir informació de sèries i pel·lícules (títols, imatges, sinopsis) — no els enviem cap dada personal teva.</li></ul><p>No venem ni compartim les teves dades amb tercers per a publicitat o analítica.</p>"
-msgstr "<ul><li><strong>Google:</strong> only if you choose to sign in with Google, to verify your identity.</li><li><strong>TheTVDB:</strong> we use this service to fetch series/movie information (titles, artwork, synopses) — we never send them any of your personal data.</li></ul><p>We do not sell or share your data with third parties for advertising or analytics.</p>"
+msgstr "<ul><li><strong>Google:</strong> solo si eliges iniciar sesión con Google, para verificar tu identidad.</li><li><strong>TheTVDB:</strong> usamos este servicio para obtener información de series y películas (títulos, imágenes, sinopsis) — no les enviamos ningún dato personal tuyo.</li></ul><p>No vendemos ni compartimos tus datos con terceros para publicidad o analítica.</p>"
 
 msgid "Quant de temps les guardem"
-msgstr "How long we keep it"
+msgstr "Cuánto tiempo los guardamos"
 
 msgid "Mentre el teu compte estigui actiu. Pots eliminar el teu compte en qualsevol moment des de l'app (Perfil → Elimina el compte), la qual cosa esborra totes les teves dades de manera permanent i immediata."
-msgstr "For as long as your account stays active. You can delete your account at any time from the app (Profile → Delete account), which permanently and immediately erases all your data."
+msgstr "Mientras tu cuenta esté activa. Puedes eliminar tu cuenta en cualquier momento desde la app (Perfil → Eliminar cuenta), lo que borra todos tus datos de forma permanente e inmediata."
 
 msgid "Els teus drets"
-msgstr "Your rights"
+msgstr "Tus derechos"
 
 msgid "Tens dret a accedir, rectificar i eliminar les teves dades, així com a sol·licitar-ne una còpia. Pots exercir aquests drets directament des de l'app (edició de perfil, eliminació de compte) o contactant-nos a <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>. També tens dret a presentar una reclamació davant l'Agència Espanyola de Protecció de Dades (aepd.es)."
-msgstr "You have the right to access, correct, and delete your data, as well as to request a copy of it. You can exercise these rights directly from the app (editing your profile, deleting your account) or by contacting us at <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>. You also have the right to lodge a complaint with your local data protection authority."
+msgstr "Tienes derecho a acceder, rectificar y eliminar tus datos, así como a solicitar una copia de los mismos. Puedes ejercer estos derechos directamente desde la app (edición de perfil, eliminación de cuenta) o contactándonos en <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>. También tienes derecho a presentar una reclamación ante la Agencia Española de Protección de Datos (aepd.es)."
 
 msgid "Seguretat"
-msgstr "Security"
+msgstr "Seguridad"
 
 msgid "La teva adreça electrònica es guarda xifrada i la contrasenya mai es guarda en text pla, només com a hash irreversible."
-msgstr "Your email address is stored encrypted, and your password is never stored in plain text - only as an irreversible hash."
+msgstr "Tu dirección de correo electrónico se guarda cifrada y la contraseña nunca se guarda en texto plano, solo como hash irreversible."
 
 msgid "Cookies"
 msgstr "Cookies"
 
 msgid "El nostre servidor fa servir una galeta tècnica de sessió, necessària pel seu funcionament. No fem servir galetes de seguiment ni de publicitat."
-msgstr "Our server uses a technical session cookie, required for it to function. We do not use tracking or advertising cookies."
+msgstr "Nuestro servidor usa una cookie técnica de sesión, necesaria para su funcionamiento. No usamos cookies de seguimiento ni de publicidad."
 
 msgid "Canvis a aquesta política"
-msgstr "Changes to this policy"
+msgstr "Cambios en esta política"
 
 msgid "Si actualitzem aquesta política de forma significativa, t'ho notificarem dins l'app."
-msgstr "If we make significant updates to this policy, we'll notify you within the app."
+msgstr "Si actualizamos esta política de forma significativa, te lo notificaremos dentro de la app."
 
 msgid "Contacte"
-msgstr "Contact"
+msgstr "Contacto"
 
 msgid "Per qualsevol dubte sobre aquesta política, escriu-nos a <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>."
-msgstr "For any questions about this policy, write to us at <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>."
+msgstr "Para cualquier duda sobre esta política, escríbenos a <a href=\"mailto:barbaragavalda@gmail.com\">barbaragavalda@gmail.com</a>."
 

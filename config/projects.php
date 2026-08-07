@@ -18,7 +18,7 @@ $config = array(
     '{lang}' => array(
         'app'       => 'Web',
         'folders'   => array('web'),
-        'languages' => array('ca', 'es')
+        'languages' => array('ca', 'es', 'en')
     )
 
 );
