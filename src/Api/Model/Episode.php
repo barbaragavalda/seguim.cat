@@ -228,6 +228,36 @@ class Episode extends Model
         return $result;
     }
 
+    /**
+     * Attaches watched_episodes/total_episodes to every row that already
+     * carries a real id_serie - used by Lists\Show and Favorites\Series,
+     * which both list already-synced series (unlike Search\Search, which
+     * still needs its own tvdb_id -> id_serie lookup first).
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    public function attachWatchProgress(array $rows, int $idUser): array
+    {
+        if (empty($rows)) {
+            return $rows;
+        }
+
+        $idSeries = array_map(static fn(array $r): int => (int) $r['id_serie'], $rows);
+        $progress = $this->watchProgressForSeries($idUser, $idSeries);
+
+        foreach ($rows as &$row) {
+            $idSerie = (int) $row['id_serie'];
+            if (isset($progress[$idSerie])) {
+                $row['watched_episodes'] = $progress[$idSerie]['watched'];
+                $row['total_episodes']   = $progress[$idSerie]['total'];
+            }
+        }
+        unset($row);
+
+        return $rows;
+    }
+
     private function load(array $episode): bool|int
     {
         if (count($episode)) {

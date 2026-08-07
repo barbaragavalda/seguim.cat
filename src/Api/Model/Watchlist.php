@@ -2,11 +2,13 @@
 
 namespace Api\Model;
 
+use Api\Model\Concerns\PaginatesByLanguage;
 use Core\Model\Model;
 use PDO;
 
 class Watchlist extends Model
 {
+    use PaginatesByLanguage;
 
     private const int PAGE_SIZE = 20;
 
@@ -473,16 +475,6 @@ class Watchlist extends Model
         $rows = $this->mysql->query($sql, $params);
 
         return $this->finalizePage($rows, $idUser, $idAppacmanLang);
-    }
-
-    private function pageParams(int $idUser, int $idAppacmanLang, int $page): array
-    {
-        return array(
-            'id_user'          => array('value' => $idUser, 'type' => PDO::PARAM_INT),
-            'id_appacman_lang' => array('value' => $idAppacmanLang, 'type' => PDO::PARAM_INT),
-            'limit'            => array('value' => self::PAGE_SIZE + 1, 'type' => PDO::PARAM_INT),
-            'offset'           => array('value' => max(0, $page) * self::PAGE_SIZE, 'type' => PDO::PARAM_INT),
-        );
     }
 
     /**
