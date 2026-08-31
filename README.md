@@ -9,7 +9,7 @@ Production domain: https://seguim.cat/.
 
 - **`{lang}`** (public site, `src/Web/`) — marketing landing page + privacy policy, `ca`/`es`/`en`.
 - **`wallaby`** (`/wallaby`, Appacman) — admin backoffice, out of the box from `freimguork-appacman`.
-- **`api`** (`/api`, `src/Api/`) — the real backend:
+- **`api`** (`/api`, `src/Api/`) — the real backend (see [API.md](API.md) for every endpoint):
   - Auth: register/login/logout (own token + Google Sign-In), password reset, email change,
     account deletion.
   - Profile editing: username, password, email, language.
