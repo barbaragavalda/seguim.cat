@@ -38,6 +38,11 @@ composer.lock
 /vendor/
 /web/vendor/
 
+###########
+# PHPUnit #
+###########
+.phpunit.result.cache
+
 ############
 # PhpStorm #
 ############
