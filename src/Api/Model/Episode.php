@@ -93,7 +93,7 @@ class Episode extends Model
 
         $params       = array();
         $placeholders = array();
-        foreach (array_values($staleIds) as $index => $idEpisode) {
+        foreach ($staleIds as $index => $idEpisode) {
             $key            = 'id_episode_' . $index;
             $placeholders[] = ':' . $key;
             $params[$key]   = array('value' => $idEpisode, 'type' => PDO::PARAM_INT);

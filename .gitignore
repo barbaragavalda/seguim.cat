@@ -44,6 +44,11 @@ composer.lock
 .phpunit.result.cache
 
 ############
+# PHPStan  #
+############
+.phpstan.cache/
+
+############
 # PhpStorm #
 ############
 .idea/

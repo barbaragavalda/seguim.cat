@@ -1,0 +1,15 @@
+parameters:
+    level: 5
+    paths:
+        - src
+    bootstrapFiles:
+        - phpstan-bootstrap.php
+    # IS_DEV's actual value varies per environment - without this, PHPStan
+    # treats the bootstrap stub's literal `true` as always true and flags
+    # every `else`/`!IS_DEV` branch as dead code
+    dynamicConstantNames:
+        - IS_DEV
+    tmpDir: .phpstan.cache
+
+includes:
+    - phpstan-baseline.neon

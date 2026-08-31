@@ -197,7 +197,8 @@ class TvTimeImport extends Model
      * @param array<string> $newDoneMovieKeys
      * @param array{
      *     shows_synced: int, shows_failed: array<int>, shows_pending: int, episodes_watched: int, episodes_rewatched: int,
-     *     lists_created: int, list_series_added: int, list_movies_added: int, movies_synced: int, movies_unmatched: array<string>,
+     *     lists_created: int, list_series_added: int, list_movies_added: int, list_series_pending: int, list_movies_pending: int,
+     *     movies_synced: int, movies_unmatched: array<string>,
      *     movies_pending: int, movies_watched: int, movies_rewatched: int,
      *     shows_total: int, movies_total: int
      * } $summaryDelta shows_total/movies_total are the export's fixed

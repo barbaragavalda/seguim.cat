@@ -582,7 +582,7 @@ final class Processor
         $flags          = $parsed['shows'][$tvdbSeriesId] ?? array('archived' => false, 'removed' => false, 'created_at' => null);
         $watchedEntries = $this->toEpisodeNumberEntries($parsed['watched'][$tvdbSeriesId] ?? array(), $parsed['episode_numbers'][$tvdbSeriesId] ?? array());
         $rewatchEntries = $this->toRewatchEpisodeNumberEntries($parsed['rewatches'][$tvdbSeriesId] ?? array(), $parsed['episode_numbers'][$tvdbSeriesId] ?? array());
-        $candidates     = ($result['status'] ?? null) === 'ambiguous' ? $result['candidates'] : array();
+        $candidates     = $result['status'] === 'ambiguous' ? $result['candidates'] : array();
 
         $pendingImport->createOrUpdate($idUser, $showName, $flags, $watchedEntries, $rewatchEntries, $candidates);
         $pending = $pendingImport->idForShowName($idUser, $showName);
